@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 const Login = ({ navigation }: { navigation: any }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const { setUser } = useAuth();
 
   const signIn = async () => {
     setLoading(true);
@@ -18,6 +20,16 @@ const Login = ({ navigation }: { navigation: any }) => {
 
       if (user.emailVerified) {
         const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
+        const userDoc = await getDoc(userRef);
+        const userData = userDoc.data();
+        
+        setUser({
+          uid: user.uid,
+          email: user.email!,
+          displayName: userData?.nom || user.email,
+          photoURL: userData?.photoURL || null
+        });
+        
         Alert.alert('Connexion réussie');
         navigation.navigate('Accueil');
       } else {
