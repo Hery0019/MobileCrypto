@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
@@ -16,14 +16,13 @@ const Login = ({ navigation }: { navigation: any }) => {
 
       if (user.emailVerified) {
         console.log('Connexion réussie');
-        alert('Connexion réussie');
-        // Rediriger vers la page principale ou autre action
+        navigation.replace('Accueil'); // Redirige automatiquement vers Accueil
       } else {
-        alert('Veuillez vérifier votre adresse e-mail avant de vous connecter.');
+        Alert.alert('Veuillez vérifier votre adresse e-mail avant de vous connecter.');
       }
     } catch (error) {
       console.error(error);
-      alert('Échec de la connexion');
+      Alert.alert('Échec de la connexion');
     }
     setLoading(false);
   };
