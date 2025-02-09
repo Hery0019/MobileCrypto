@@ -1,22 +1,74 @@
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React from 'react';
+import { AuthProvider, useAuth } from './app/context/AuthContext';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'react-native';
 import Home from './app/screens/Home';
 import Login from './app/screens/Login';
 import Register from './app/screens/Register';
 import Accueil from './app/screens/Accueil';
+import Portefeuille from './app/screens/Portefeuille';
+import Transactions from './app/screens/Transactions';
+import Parametres from './app/screens/Parametres';
+import Layout from './app/components/Layout';
 
 const Stack = createNativeStackNavigator();
 
-export default function App() {
+// Wrapper pour les écrans authentifiés
+const withLayout = (Component) => (props) => (
+  <Layout>
+    <Component {...props} />
+  </Layout>
+);
+
+const Navigation = () => {
+  const { user } = useAuth();
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName='Home'>
-        <Stack.Screen name='Home' component={Home} options={{ headerShown: false }} />
-        <Stack.Screen name='Login' component={Login} options={{ title: 'Connexion' }} />
-        <Stack.Screen name='Register' component={Register} options={{ title: 'inscription' }} />
-        <Stack.Screen name='Accueil' component={Accueil} options={{ title: 'Accueil' }} />
+    <>
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="#FFFFFF"
+        translucent={true}
+      />
+      <Stack.Navigator 
+        screenOptions={{ 
+          headerShown: false,
+          contentStyle: { backgroundColor: '#FFFFFF' }
+        }}
+      >
+        {!user ? (
+          // Routes non authentifiées
+          <>
+            <Stack.Screen name="Home" component={Home} />
+            <Stack.Screen name="Login" component={Login} />
+            <Stack.Screen name="Register" component={Register} />
+          </>
+        ) : (
+          // Routes authentifiées avec layout
+          <>
+            <Stack.Screen name="Accueil" component={withLayout(Accueil)} />
+            <Stack.Screen name="Portefeuille" component={withLayout(Portefeuille)} />
+            <Stack.Screen name="Transactions" component={withLayout(Transactions)} />
+            <Stack.Screen name="Parametres" component={withLayout(Parametres)} />
+          </>
+        )}
       </Stack.Navigator>
-    </NavigationContainer>
+    </>
   );
-}
+};
+
+const App = () => {
+  return (
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NavigationContainer>
+          <Navigation />
+        </NavigationContainer>
+      </AuthProvider>
+    </SafeAreaProvider>
+  );
+};
+
+export default App;
