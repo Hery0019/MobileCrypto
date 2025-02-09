@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthProvider, useAuth } from './app/context/AuthContext';
+import Home from './app/screens/Home';
 import Login from './app/screens/Login';
 import Register from './app/screens/Register';
 import Accueil from './app/screens/Accueil';
@@ -25,6 +26,7 @@ const Navigation = () => {
       {!user ? (
         // Routes non authentifiées
         <>
+          <Stack.Screen name="Home" component={Home} />
           <Stack.Screen name="Login" component={Login} />
           <Stack.Screen name="Register" component={Register} />
         </>
