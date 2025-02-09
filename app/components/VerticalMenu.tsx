@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Avatar from './Avatar';
 
 interface VerticalMenuProps {
@@ -28,10 +29,7 @@ const VerticalMenu = ({ onCloseMenu }: VerticalMenuProps) => {
       await FIREBASE_AUTH.signOut();
       setUser(null);
       if (onCloseMenu) onCloseMenu();
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
+      // L'utilisateur sera automatiquement redirigé vers l'écran non authentifié
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
       Alert.alert('Erreur', 'Impossible de se déconnecter');
@@ -46,93 +44,84 @@ const VerticalMenu = ({ onCloseMenu }: VerticalMenuProps) => {
   };
 
   return (
-    <View style={styles.container}>
-      {!isLargeScreen && (
-        <TouchableOpacity style={styles.closeButton} onPress={onCloseMenu}>
-          <Ionicons name="close" size={24} color="#fff" />
-        </TouchableOpacity>
-      )}
-
-      <View style={styles.profileSection}>
-        <Avatar />
-        <Text style={styles.userName}>{FIREBASE_AUTH.currentUser?.email}</Text>
-      </View>
-
-      <View style={styles.menuItems}>
-        {menuItems.map((item, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.menuItem}
-            onPress={() => handleNavigation(item.screen)}
-          >
-            <Ionicons name={item.icon} size={24} color="#fff" style={styles.menuIcon} />
-            <Text style={styles.menuText}>{item.title}</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {!isLargeScreen && (
+          <TouchableOpacity style={styles.closeButton} onPress={onCloseMenu}>
+            <Ionicons name="close" size={24} color="#000" />
           </TouchableOpacity>
-        ))}
-      </View>
+        )}
+        
+        <View style={styles.profileSection}>
+          <Avatar />
+        </View>
 
-      <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-        <Ionicons name="log-out" size={24} color="#fff" style={styles.menuIcon} />
-        <Text style={styles.signOutText}>Déconnexion</Text>
-      </TouchableOpacity>
-    </View>
+        <View style={styles.menuItems}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.menuItem}
+              onPress={() => handleNavigation(item.screen)}
+            >
+              <Ionicons name={item.icon} size={24} color="#2c3e50" />
+              <Text style={styles.menuText}>{item.title}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Ionicons name="log-out" size={24} color="#e74c3c" />
+          <Text style={[styles.menuText, styles.signOutText]}>Se déconnecter</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   container: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#2c3e50',
-    padding: 20,
-    justifyContent: 'space-between',
+    flex: 1,
+    padding: 16,
   },
   closeButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    padding: 10,
-    zIndex: 1,
+    alignSelf: 'flex-end',
+    padding: 8,
   },
   profileSection: {
     alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 30,
-  },
-  userName: {
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 10,
+    marginVertical: 16,
   },
   menuItems: {
     flex: 1,
-    marginTop: 20,
+    marginTop: 16,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#34495e',
-  },
-  menuIcon: {
-    marginRight: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
   },
   menuText: {
-    color: '#fff',
+    marginLeft: 16,
     fontSize: 16,
+    color: '#2c3e50',
   },
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    backgroundColor: '#e74c3c',
-    borderRadius: 5,
-    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
   signOutText: {
-    color: '#fff',
-    fontSize: 16,
+    color: '#e74c3c',
   },
 });
 

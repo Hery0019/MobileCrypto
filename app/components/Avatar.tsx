@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TouchableOpacity, Image, StyleSheet, Alert } from 'react-native';
+import { View, TouchableOpacity, Image, Text, StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { FIREBASE_STORAGE, FIREBASE_DB } from '../../FirebaseConfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -110,24 +110,37 @@ const Avatar = () => {
   };
 
   return (
-    <TouchableOpacity onPress={handlePress} style={styles.container}>
-      <Image
-        source={avatarUrl ? { uri: avatarUrl } : require('../../assets/default-avatar.png')}
-        style={styles.avatar}
-      />
-    </TouchableOpacity>
+    <View style={styles.container}>
+      <TouchableOpacity onPress={handlePress} style={styles.avatarContainer}>
+        <Image
+          source={avatarUrl ? { uri: avatarUrl } : require('../../assets/default-avatar.png')}
+          style={styles.avatar}
+        />
+      </TouchableOpacity>
+      <Text style={styles.userName}>{user?.displayName || 'Utilisateur'}</Text>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    marginRight: 10,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  avatarContainer: {
+    marginBottom: 8,
   },
   avatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#e1e1e1',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#f0f0f0',
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    textAlign: 'center',
   },
 });
 
