@@ -61,7 +61,7 @@ const Accueil = ({ navigation }: { navigation: any }) => {
           datasets: chartDatasets,
         }}
         width={screenWidth - 40}  // Ajuster la taille du graphique
-        height={300}  // Augmenter la hauteur du graphique
+        height={400}  // Augmenter la hauteur du graphique
         yAxisLabel="$"
         chartConfig={{
           backgroundColor: "#fff",
