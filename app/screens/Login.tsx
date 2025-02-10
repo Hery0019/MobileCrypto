@@ -69,7 +69,7 @@ const Login = ({ navigation }: { navigation: any }) => {
           <Text style={styles.infoTitle}>Informations de connexion :</Text>
           <Text style={styles.infoText}>Login admin : herakotonarivo@gmail.com</Text>
           <Text style={styles.infoText}>Mot de passe : 123456</Text>
-          <Text style={styles.infoText}>Login user : ravelonarivoantonio@gmail.com</Text>
+          <Text style={styles.infoText}>Login user si besoin : ravelonarivoantonio@gmail.com</Text>
           <Text style={styles.infoText}>Mot de passe : 123456</Text>
         </View>
 
