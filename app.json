@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon2.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -25,13 +25,19 @@
       },
       "package": "com.rvtox.mobileCrypto",
       "versionCode": 1,
-      "permissions": [],
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
       "minSDKVersion": 24,
       "targetSDKVersion": 33
     },
     "web": {
       "favicon": "./assets/icon2.png"
     },
+    "plugins": [
+      "expo-build-properties"
+    ],
     "extra": {
       "eas": {
         "projectId": "337c2af9-3875-4b1c-87ab-75577e9a3805"

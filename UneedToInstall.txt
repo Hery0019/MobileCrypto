@@ -9,4 +9,3 @@ npm install victory-native
 npm install react-native-svg
 
 
-pourquoi dans portefeuille.tsx, les crypto se repetent.par exemple, bitcoin se repete 2 fois
