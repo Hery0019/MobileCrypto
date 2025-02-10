@@ -1,101 +1,157 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { FIREBASE_AUTH } from '../../FirebaseConfig';
-import { useAuth } from '../context/AuthContext';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
+import { FIREBASE_AUTH } from '../../FirebaseConfig';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 
-const Parametres = ({ navigation }: { navigation: any }) => {
+const Parametres = () => {
   const { user, setUser } = useAuth();
+  const navigation = useNavigation();
+  const [notifications, setNotifications] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+  const [biometrics, setBiometrics] = useState(false);
 
   const handleLogout = async () => {
     try {
       await FIREBASE_AUTH.signOut();
       setUser(null);
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Home'
+        })
+      );
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue lors de la déconnexion');
+      Alert.alert('Erreur', 'Impossible de se déconnecter');
     }
   };
 
-  const menuItems = [
-    {
-      icon: 'person-outline',
-      title: 'Profil',
-      subtitle: 'Modifier vos informations personnelles',
-      color: '#4CAF50',
-      onPress: () => Alert.alert('Info', 'Fonctionnalité à venir'),
-    },
-    {
-      icon: 'notifications-outline',
-      title: 'Notifications',
-      subtitle: 'Gérer vos préférences de notification',
-      color: '#2196F3',
-      onPress: () => Alert.alert('Info', 'Fonctionnalité à venir'),
-    },
-    {
-      icon: 'shield-outline',
-      title: 'Sécurité',
-      subtitle: 'Modifier votre mot de passe',
-      color: '#FF9800',
-      onPress: () => Alert.alert('Info', 'Fonctionnalité à venir'),
-    },
-    {
-      icon: 'help-circle-outline',
-      title: 'Aide',
-      subtitle: 'Centre d\'aide et support',
-      color: '#9C27B0',
-      onPress: () => Alert.alert('Info', 'Fonctionnalité à venir'),
-    },
-    {
-      icon: 'log-out-outline',
-      title: 'Déconnexion',
-      subtitle: 'Se déconnecter de l\'application',
-      color: '#f44336',
-      onPress: handleLogout,
-    },
-  ];
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Supprimer le compte',
+      'Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.',
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+        },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const user = FIREBASE_AUTH.currentUser;
+              if (user) {
+                await user.delete();
+                Alert.alert('Succès', 'Votre compte a été supprimé avec succès');
+              }
+            } catch (error) {
+              console.error('Erreur lors de la suppression du compte:', error);
+              Alert.alert('Erreur', 'Impossible de supprimer le compte');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handlePasswordChange = () => {
+    if (user?.email) {
+      FIREBASE_AUTH.sendPasswordResetEmail(user.email)
+        .then(() => {
+          Alert.alert(
+            'Email envoyé',
+            'Un email de réinitialisation du mot de passe a été envoyé à votre adresse email.'
+          );
+        })
+        .catch((error) => {
+          console.error('Erreur lors de l\'envoi de l\'email:', error);
+          Alert.alert('Erreur', 'Impossible d\'envoyer l\'email de réinitialisation');
+        });
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Paramètres</Text>
-      </View>
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>Paramètres</Text>
 
-      <View style={styles.userInfo}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Compte</Text>
+        <View style={styles.profileInfo}>
+          <Text style={styles.label}>Email</Text>
+          <Text style={styles.value}>{user?.email}</Text>
+        </View>
+        
+        <TouchableOpacity style={styles.button} onPress={handlePasswordChange}>
+          <Ionicons name="key-outline" size={24} color="#2c3e50" />
+          <Text style={styles.buttonText}>Changer le mot de passe</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, styles.deleteButton]} 
+          onPress={handleLogout}
+        >
+          <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
+          <Text style={[styles.buttonText, styles.deleteButtonText]}>
+            Se déconnecter
           </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, styles.deleteButton]} 
+          onPress={handleDeleteAccount}
+        >
+          <Ionicons name="trash-outline" size={24} color="#e74c3c" />
+          <Text style={[styles.buttonText, styles.deleteButtonText]}>
+            Supprimer le compte
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Préférences</Text>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingLabel}>
+            <Ionicons name="notifications-outline" size={24} color="#2c3e50" />
+            <Text style={styles.settingText}>Notifications</Text>
+          </View>
+          <Switch
+            value={notifications}
+            onValueChange={setNotifications}
+            trackColor={{ false: '#767577', true: '#2c3e50' }}
+          />
         </View>
-        <View style={styles.userDetails}>
-          <Text style={styles.userName}>{user?.displayName || 'Utilisateur'}</Text>
-          <Text style={styles.userEmail}>{user?.email}</Text>
+
+        <View style={styles.settingItem}>
+          <View style={styles.settingLabel}>
+            <Ionicons name="moon-outline" size={24} color="#2c3e50" />
+            <Text style={styles.settingText}>Mode sombre</Text>
+          </View>
+          <Switch
+            value={darkMode}
+            onValueChange={setDarkMode}
+            trackColor={{ false: '#767577', true: '#2c3e50' }}
+          />
+        </View>
+
+        <View style={styles.settingItem}>
+          <View style={styles.settingLabel}>
+            <Ionicons name="finger-print-outline" size={24} color="#2c3e50" />
+            <Text style={styles.settingText}>Authentification biométrique</Text>
+          </View>
+          <Switch
+            value={biometrics}
+            onValueChange={setBiometrics}
+            trackColor={{ false: '#767577', true: '#2c3e50' }}
+          />
         </View>
       </View>
 
-      <View style={styles.menuContainer}>
-        {menuItems.map((item, index) => (
-          <TouchableOpacity
-            key={index}
-            style={styles.menuItem}
-            onPress={item.onPress}
-          >
-            <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-              <Ionicons name={item.icon as any} size={24} color="white" />
-            </View>
-            <View style={styles.menuItemText}>
-              <Text style={styles.menuItemTitle}>{item.title}</Text>
-              <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
-            </View>
-            <Ionicons name="chevron-forward-outline" size={24} color="#666" />
-          </TouchableOpacity>
-        ))}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>À propos</Text>
+        <Text style={styles.version}>Version 1.0.0</Text>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -103,82 +159,85 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f6fa',
-  },
-  header: {
     padding: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e1e1e1',
   },
-  headerTitle: {
+  title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
     marginBottom: 20,
   },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#2196F3',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 24,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  userDetails: {
-    marginLeft: 15,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#666',
-  },
-  menuContainer: {
+  section: {
     backgroundColor: '#fff',
     borderRadius: 10,
-    marginHorizontal: 15,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: 15,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#2c3e50',
+  },
+  profileInfo: {
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+  },
+  value: {
+    fontSize: 16,
+    color: '#2c3e50',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
+  settingLabel: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  menuItemText: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  menuItemTitle: {
+  settingText: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
+    marginLeft: 10,
+    color: '#2c3e50',
   },
-  menuItemSubtitle: {
-    fontSize: 12,
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    marginTop: 10,
+  },
+  buttonText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#2c3e50',
+  },
+  deleteButton: {
+    backgroundColor: '#fff5f5',
+  },
+  deleteButtonText: {
+    color: '#e74c3c',
+  },
+  version: {
+    fontSize: 14,
     color: '#666',
-    marginTop: 2,
+    textAlign: 'center',
   },
 });
 

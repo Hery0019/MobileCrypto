@@ -1,3 +1,4 @@
+// Register.tsx
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
@@ -30,12 +31,12 @@ const Register = ({ navigation }: { navigation: any }) => {
     }
   };
 
-  const initializeCryptoWallets = async (userId: number) => {
+  const initializeCryptoWallets = async (userId: string) => {
     try {
       // Récupérer toutes les cryptomonnaies
       const cryptosSnapshot = await getDocs(collection(FIREBASE_DB, 'cryptocurrencies'));
       const cryptowalletRef = collection(FIREBASE_DB, 'cryptowallet');
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', email);
+      const userRef = doc(FIREBASE_DB, 'utilisateurs', userId);
 
       // Pour chaque crypto, créer un wallet avec valeur 0
       const promises = cryptosSnapshot.docs.map(async (cryptoDoc) => {
@@ -56,6 +57,11 @@ const Register = ({ navigation }: { navigation: any }) => {
   };
 
   const signUp = async () => {
+    if (!prenom || !nom || !email || !contact || !password) {
+      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
+      return;
+    }
+
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(FIREBASE_AUTH, email, password);
@@ -64,8 +70,8 @@ const Register = ({ navigation }: { navigation: any }) => {
 
       const nextId = await getNextId();
       
-      // Créer le document utilisateur avec l'email comme ID
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', email);
+      // Créer le document utilisateur avec l'UID comme ID du document
+      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
       await setDoc(userRef, {
         id: nextId,
         nom,
@@ -73,19 +79,18 @@ const Register = ({ navigation }: { navigation: any }) => {
         contact,
         email,
         photo: '',
-        password,
-        role: 'user', // Définir le rôle par défaut comme 'user'
+        role: 'user',
         porteFeuille: 0,
       });
 
       // Initialiser les wallets pour toutes les cryptos
-      await initializeCryptoWallets(nextId);
+      await initializeCryptoWallets(user.uid);
       
       Alert.alert('Inscription réussie', 'Un e-mail de confirmation a été envoyé.');
       navigation.navigate('Login');
     } catch (error) {
       console.error(error);
-      Alert.alert('Erreur', 'Échec de l\'inscription');
+      Alert.alert('Erreur', "Une erreur s'est produite lors de l'inscription. Veuillez réessayer.");
     }
     setLoading(false);
   };
@@ -93,9 +98,24 @@ const Register = ({ navigation }: { navigation: any }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>S'inscrire</Text>
-      <TextInput style={styles.input} placeholder="Prénom" value={prenom} onChangeText={setPrenom} />
-      <TextInput style={styles.input} placeholder="Nom" value={nom} onChangeText={setNom} />
-      <TextInput style={styles.input} placeholder="Contact" value={contact} onChangeText={setContact} />
+      <TextInput 
+        style={styles.input} 
+        placeholder="Prénom" 
+        value={prenom} 
+        onChangeText={setPrenom}
+      />
+      <TextInput 
+        style={styles.input} 
+        placeholder="Nom" 
+        value={nom} 
+        onChangeText={setNom}
+      />
+      <TextInput 
+        style={styles.input} 
+        placeholder="Contact" 
+        value={contact} 
+        onChangeText={setContact}
+      />
       <TextInput 
         style={styles.input} 
         placeholder="Email" 
