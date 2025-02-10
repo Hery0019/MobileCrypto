@@ -11,6 +11,7 @@ import Accueil from './app/screens/Accueil';
 import Portefeuille from './app/screens/Portefeuille';
 import Transactions from './app/screens/Transactions';
 import Parametres from './app/screens/Parametres';
+import Admin from './app/screens/Admin';
 import Layout from './app/components/Layout';
 
 const Stack = createNativeStackNavigator();
@@ -45,8 +46,13 @@ const Navigation = () => {
             <Stack.Screen name="Login" component={Login} />
             <Stack.Screen name="Register" component={Register} />
           </>
+        ) : user.role === 'admin' ? (
+          // Routes admin
+          <>
+            <Stack.Screen name="Admin" component={Admin} />
+          </>
         ) : (
-          // Routes authentifiées avec layout
+          // Routes utilisateur normal
           <>
             <Stack.Screen name="Accueil" component={withLayout(Accueil)} />
             <Stack.Screen name="Portefeuille" component={withLayout(Portefeuille)} />

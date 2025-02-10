@@ -188,27 +188,24 @@ const Portefeuille = () => {
         return;
       }
 
-      // Mettre à jour le solde
-      const newSolde = isDepot ? currentSolde + montantNum : currentSolde - montantNum;
-      await updateDoc(userRef, {
-        porteFeuille: newSolde
+      // Créer une notification pour l'admin
+      const notificationsRef = collection(FIREBASE_DB, 'notifications');
+      await addDoc(notificationsRef, {
+        userEmail: user.email,
+        userName: user.displayName,
+        amount: montantNum,
+        type: isDepot ? 'depot' : 'retrait',
+        status: 'pending',
+        createdAt: serverTimestamp(),
       });
 
-      // Ajouter l'historique de la transaction
-      const transactionData = {
-        utilisateur: userRef,
-        valeur: montantNum,
-        dateheure: serverTimestamp(),
-        is_depot: isDepot
-      };
-      
-      const docRef = await addDoc(collection(FIREBASE_DB, 'historiquedepot'), transactionData);
-
-      setSolde(newSolde);
+      Alert.alert(
+        'Demande envoyée',
+        `${isDepot ? 'Dépôt' : 'Retrait'} effectué avec succès. Votre demande a été envoyée à l\'administrateur pour validation.`
+      );
       setMontant('');
       setShowDepotModal(false);
       setShowRetraitModal(false);
-      Alert.alert('Succès', `${isDepot ? 'Dépôt' : 'Retrait'} effectué avec succès`);
     } catch (error) {
       console.error('Erreur lors de la transaction:', error);
       Alert.alert('Erreur', 'Une erreur est survenue lors de la transaction');

@@ -3,7 +3,7 @@ import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 
 const Login = ({ navigation }: { navigation: any }) => {
@@ -15,29 +15,48 @@ const Login = ({ navigation }: { navigation: any }) => {
   const signIn = async () => {
     setLoading(true);
     try {
+      console.log('Tentative de connexion avec:', email); // Log l'email
+
       const userCredential = await signInWithEmailAndPassword(FIREBASE_AUTH, email, password);
       const user = userCredential.user;
-      await user.reload();
+      console.log('Firebase Auth réussi, uid:', user.uid); // Log l'uid
 
-      if (user.emailVerified) {
-        const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
-        const userDoc = await getDoc(userRef);
+      // D'abord, essayons de trouver l'utilisateur par email
+      const usersRef = collection(FIREBASE_DB, 'utilisateurs');
+      const q = query(usersRef, where('email', '==', email));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        // Prendre le premier document correspondant
+        const userDoc = querySnapshot.docs[0];
         const userData = userDoc.data();
-        
+        console.log('Données utilisateur trouvées:', userData); // Log les données utilisateur
+
         setUser({
           uid: user.uid,
           email: user.email!,
-          displayName: userData?.nom || user.email,
-          photoURL: userData?.photoURL || null
+          role: userData.role || 'user',
+          displayName: userData.nom || user.email,
+          photoURL: userData.photoURL || null
         });
-        
+
         Alert.alert('Connexion réussie');
-        navigation.navigate('Accueil');
+        
+        console.log('Role utilisateur:', userData.role); // Log le rôle
+
+        if (userData.role === 'admin') {
+          console.log('Redirection vers Admin'); // Log la redirection
+          navigation.navigate('Admin');
+        } else {
+          console.log('Redirection vers Accueil'); // Log la redirection
+          navigation.navigate('Accueil');
+        }
       } else {
-        Alert.alert('Erreur', 'Veuillez vérifier votre adresse e-mail avant de vous connecter.');
+        console.log('Aucun utilisateur trouvé avec cet email'); // Log l'erreur
+        Alert.alert('Erreur', 'Compte utilisateur non trouvé');
       }
     } catch (error) {
-      console.error(error);
+      console.error('Erreur complète:', error); // Log l'erreur complète
       Alert.alert('Échec de la connexion');
     }
     setLoading(false);
@@ -46,9 +65,27 @@ const Login = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" />
-        <TextInput style={styles.input} placeholder="Mot de passe" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
-        {loading ? <ActivityIndicator size="large" color="#0000ff" /> : <Button title="Se connecter" onPress={signIn} />}
+        <TextInput 
+          style={styles.input} 
+          placeholder="Email" 
+          value={email} 
+          onChangeText={setEmail} 
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextInput 
+          style={styles.input} 
+          placeholder="Mot de passe" 
+          value={password} 
+          onChangeText={setPassword} 
+          secureTextEntry 
+          autoCapitalize="none" 
+        />
+        {loading ? (
+          <ActivityIndicator size="large" color="#0000ff" />
+        ) : (
+          <Button title="Se connecter" onPress={signIn} />
+        )}
       </View>
     </SafeAreaView>
   );

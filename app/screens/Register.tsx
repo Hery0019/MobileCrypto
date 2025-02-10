@@ -75,7 +75,7 @@ const Register = ({ navigation }: { navigation: any }) => {
         email,
         photo: '',
         password,
-        role: '/roles/utilisateur',
+        role: 'user', // Définir le rôle par défaut comme 'user'
         porteFeuille: 0,
       });
 
@@ -97,17 +97,52 @@ const Register = ({ navigation }: { navigation: any }) => {
       <TextInput style={styles.input} placeholder="Prénom" value={prenom} onChangeText={setPrenom} />
       <TextInput style={styles.input} placeholder="Nom" value={nom} onChangeText={setNom} />
       <TextInput style={styles.input} placeholder="Contact" value={contact} onChangeText={setContact} />
-      <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" />
-      <TextInput style={styles.input} placeholder="Mot de passe" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
-      {loading ? <ActivityIndicator size="large" color="#0000ff" /> : <Button title="S'inscrire" onPress={signUp} />}
+      <TextInput 
+        style={styles.input} 
+        placeholder="Email" 
+        value={email} 
+        onChangeText={setEmail} 
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
+      <TextInput 
+        style={styles.input} 
+        placeholder="Mot de passe" 
+        value={password} 
+        onChangeText={setPassword} 
+        secureTextEntry 
+        autoCapitalize="none"
+      />
+      {loading ? (
+        <ActivityIndicator size="large" color="#0000ff" />
+      ) : (
+        <Button title="S'inscrire" onPress={signUp} />
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#fff' },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  input: { width: '100%', height: 50, borderWidth: 1, borderRadius: 5, paddingLeft: 10, marginBottom: 10 },
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fff'
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20
+  },
+  input: {
+    width: '100%',
+    height: 50,
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingLeft: 10,
+    marginBottom: 10
+  },
 });
 
 export default Register;
