@@ -47,40 +47,56 @@ const Portefeuille = () => {
 
         setSolde(userDoc.data().porteFeuille || 0);
 
-        // Récupérer les wallets de l'utilisateur
-        const walletsQuery = query(
-          collection(FIREBASE_DB, 'cryptowallet'),
-          where('user', '==', doc(FIREBASE_DB, 'utilisateurs', user.email))
-        );
+        // Récupérer les cryptos de l'utilisateur
+        const fetchUserCryptos = async () => {
+          try {
+            const userRef = doc(FIREBASE_DB, 'utilisateurs', user.email);
+            
+            // Récupérer tous les wallets de l'utilisateur
+            const walletsQuery = query(
+              collection(FIREBASE_DB, 'cryptowallet'),
+              where('user', '==', userRef)
+            );
+            
+            const walletsSnapshot = await getDocs(walletsQuery);
+            const wallets: any[] = [];
+            const processedCryptos = new Set(); // Pour éviter les doublons
 
-        const walletsSnapshot = await getDocs(walletsQuery);
-        const walletsPromises = walletsSnapshot.docs.map(async (walletDoc) => {
-          const walletData = walletDoc.data();
-          // Récupérer les données de la crypto
-          const cryptoDoc = await getDoc(walletData.crypto);
-          console.log("Données de la crypto:", cryptoDoc.data());
-          console.log("Référence de la crypto:", walletData.crypto.path);
-          
-          if (cryptoDoc.exists()) {
-            const cryptoData = cryptoDoc.data();
-            console.log("Nom de la crypto trouvé:", cryptoData.name || cryptoData.nom);
-            return {
-              id: walletDoc.id,
-              cryptoName: cryptoData.name || cryptoData.nom || 'Unknown',
-              valeur: walletData.valeur || 0
-            };
-          } else {
-            console.log("Document crypto non trouvé pour:", walletData.crypto.path);
-            return {
-              id: walletDoc.id,
-              cryptoName: 'Unknown',
-              valeur: walletData.valeur || 0
-            };
+            for (const walletDoc of walletsSnapshot.docs) {
+              const walletData = walletDoc.data();
+              const cryptoRef = walletData.crypto;
+              
+              // Vérifier si nous avons déjà traité cette crypto
+              const cryptoId = cryptoRef.id;
+              if (processedCryptos.has(cryptoId)) continue;
+              processedCryptos.add(cryptoId);
+              
+              // Récupérer les détails de la crypto
+              const cryptoDoc = await getDoc(cryptoRef);
+              if (cryptoDoc.exists()) {
+                wallets.push({
+                  id: walletDoc.id,
+                  valeur: walletData.valeur,
+                  crypto: {
+                    id: cryptoDoc.id,
+                    ...cryptoDoc.data()
+                  }
+                });
+              }
+            }
+            
+            const cryptoWallets: CryptoWallet[] = wallets.map(wallet => ({
+              id: wallet.id,
+              cryptoName: wallet.crypto.name || wallet.crypto.nom || 'Unknown',
+              valeur: wallet.valeur
+            }));
+            setCryptoWallets(cryptoWallets);
+          } catch (error) {
+            console.error('Erreur lors de la récupération des cryptos:', error);
           }
-        });
+        };
 
-        const wallets = await Promise.all(walletsPromises);
-        setCryptoWallets(wallets);
+        await fetchUserCryptos();
         setLoading(false);
       } catch (error) {
         console.error('Erreur lors de la récupération des données:', error);

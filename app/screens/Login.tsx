@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
@@ -65,6 +65,14 @@ const Login = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoTitle}>Informations de connexion :</Text>
+          <Text style={styles.infoText}>Login admin : herakotonarivo@gmail.com</Text>
+          <Text style={styles.infoText}>Mot de passe : 123456</Text>
+          <Text style={styles.infoText}>Login user : ravelonarivoantonio@gmail.com</Text>
+          <Text style={styles.infoText}>Mot de passe : 123456</Text>
+        </View>
+
         <TextInput 
           style={styles.input} 
           placeholder="Email" 
@@ -102,6 +110,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#fff'
+  },
+  infoContainer: {
+    backgroundColor: '#f0f0f0',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 30,
+    width: '100%',
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  infoText: {
+    fontSize: 14,
+    marginBottom: 5,
   },
   input: {
     width: '100%',
