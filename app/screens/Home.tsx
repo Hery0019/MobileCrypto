@@ -21,7 +21,7 @@ const Home = () => {
       </TouchableOpacity>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>© Copyright 2025 Tox</Text>
+        <Text style={styles.footerText}>© Copyright 2025 Tox,Hery, ary Kibo</Text>
       </View>
     </View>
   );
