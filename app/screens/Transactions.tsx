@@ -1,104 +1,108 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
+import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
+import { collection, query, where, getDocs, doc } from 'firebase/firestore';
 
 interface Transaction {
   id: string;
-  type: 'achat' | 'vente';
-  cryptoName: string;
-  cryptoSymbol: string;
-  amount: number;
-  price: number;
-  date: Date;
+  valeur: number;
+  is_depot: boolean;
+  dateheure: any;
 }
 
 const Transactions = () => {
-  const [transactions] = useState<Transaction[]>([
-    {
-      id: '1',
-      type: 'achat',
-      cryptoName: 'Bitcoin',
-      cryptoSymbol: 'BTC',
-      amount: 0.1,
-      price: 45000,
-      date: new Date('2024-02-09T10:30:00'),
-    },
-    {
-      id: '2',
-      type: 'vente',
-      cryptoName: 'Ethereum',
-      cryptoSymbol: 'ETH',
-      amount: 1.5,
-      price: 2800,
-      date: new Date('2024-02-08T15:45:00'),
-    },
-  ]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
+
+  const fetchTransactions = async () => {
+    try {
+      const user = FIREBASE_AUTH.currentUser;
+      if (!user?.email) {
+        console.error('Utilisateur non connecté');
+        return;
+      }
+
+      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.email);
+      const transactionsQuery = query(
+        collection(FIREBASE_DB, 'historiquedepot'),
+        where('utilisateur', '==', userRef)
+      );
+
+      const querySnapshot = await getDocs(transactionsQuery);
+      const transactionsList: Transaction[] = [];
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        transactionsList.push({
+          id: doc.id,
+          valeur: data.valeur,
+          is_depot: data.is_depot,
+          dateheure: data.dateheure,
+        });
+      });
+
+      // Trier par date décroissante
+      transactionsList.sort((a, b) => b.dateheure.seconds - a.dateheure.seconds);
+
+      setTransactions(transactionsList);
+      setLoading(false);
+    } catch (error) {
+      console.error('Erreur lors de la récupération des transactions:', error);
+      setLoading(false);
+    }
+  };
 
   const renderTransaction = ({ item }: { item: Transaction }) => {
-    const isAchat = item.type === 'achat';
-    const totalValue = item.amount * item.price;
+    const date = new Date(item.dateheure.seconds * 1000);
+    const formattedDate = date.toLocaleDateString();
+    const formattedTime = date.toLocaleTimeString();
 
     return (
       <View style={styles.transactionCard}>
         <View style={styles.transactionHeader}>
-          <View style={styles.cryptoInfo}>
-            <Ionicons 
-              name={isAchat ? 'arrow-down-circle' : 'arrow-up-circle'} 
-              size={24} 
-              color={isAchat ? '#2ecc71' : '#e74c3c'} 
-            />
-            <Text style={styles.cryptoName}>{item.cryptoName}</Text>
-            <Text style={styles.cryptoSymbol}>({item.cryptoSymbol})</Text>
-          </View>
-          <Text style={styles.date}>
-            {item.date.toLocaleDateString()} {item.date.toLocaleTimeString()}
+          <Text style={[
+            styles.transactionType,
+            { color: item.is_depot ? '#4CAF50' : '#f44336' }
+          ]}>
+            {item.is_depot ? 'Dépôt' : 'Retrait'}
+          </Text>
+          <Text style={styles.transactionAmount}>
+            {item.is_depot ? '+' : '-'}{item.valeur} Ar
           </Text>
         </View>
-
-        <View style={styles.transactionDetails}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Type:</Text>
-            <Text style={[
-              styles.detailValue,
-              { color: isAchat ? '#2ecc71' : '#e74c3c' }
-            ]}>
-              {isAchat ? 'Achat' : 'Vente'}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Montant:</Text>
-            <Text style={styles.detailValue}>{item.amount} {item.cryptoSymbol}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Prix:</Text>
-            <Text style={styles.detailValue}>${item.price.toLocaleString()}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Total:</Text>
-            <Text style={styles.detailValue}>${totalValue.toLocaleString()}</Text>
-          </View>
+        <View style={styles.transactionFooter}>
+          <Text style={styles.transactionDate}>{formattedDate}</Text>
+          <Text style={styles.transactionTime}>{formattedTime}</Text>
         </View>
       </View>
     );
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Historique des Transactions</Text>
-      </View>
-
-      <FlatList
-        data={transactions}
-        renderItem={renderTransaction}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.transactionList}
-      />
-
-      <TouchableOpacity style={styles.addButton}>
-        <Ionicons name="add-circle" size={24} color="#fff" />
-        <Text style={styles.addButtonText}>Nouvelle Transaction</Text>
-      </TouchableOpacity>
+      <Text style={styles.title}>Historique des Transactions</Text>
+      {transactions.length > 0 ? (
+        <FlatList
+          data={transactions}
+          renderItem={renderTransaction}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContainer}
+        />
+      ) : (
+        <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
+      )}
     </View>
   );
 };
@@ -107,16 +111,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f6fa',
-    padding: 20,
+    padding: 15,
   },
-  header: {
-    marginBottom: 20,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#333',
   },
-  transactionList: {
+  listContainer: {
     paddingBottom: 20,
   },
   transactionCard: {
@@ -124,14 +132,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 15,
     marginBottom: 10,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
     shadowRadius: 3.84,
-    elevation: 5,
   },
   transactionHeader: {
     flexDirection: 'row',
@@ -139,53 +144,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  cryptoInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cryptoName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  cryptoSymbol: {
+  transactionType: {
     fontSize: 16,
-    color: '#666',
-    marginLeft: 5,
+    fontWeight: 'bold',
   },
-  date: {
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  transactionFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 10,
+  },
+  transactionDate: {
     color: '#666',
     fontSize: 14,
   },
-  transactionDetails: {
-    marginTop: 10,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-  detailLabel: {
+  transactionTime: {
     color: '#666',
-    fontSize: 16,
+    fontSize: 14,
   },
-  detailValue: {
+  emptyText: {
+    textAlign: 'center',
     fontSize: 16,
-    fontWeight: '500',
-  },
-  addButton: {
-    backgroundColor: '#2c3e50',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-    borderRadius: 10,
+    color: '#666',
     marginTop: 20,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    marginLeft: 10,
   },
 });
 

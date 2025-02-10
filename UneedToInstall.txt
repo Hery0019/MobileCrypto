@@ -1,5 +1,12 @@
-npm install react-native-chart-kit
-npm install @react-native-async-storage/async-storage@1.23.1
-npm install @expo/vector-icons
-npm instal react-native mmkv-storage
 npm install react-native-safe-area-context
+npm install expo
+npm install react-native-chart-kit
+npm install react-native-mmkv-storage
+npm install -g eas-cli
+npm install @react-native-community/slider
+ npm install @react-native-picker/picker
+npm install victory-native
+npm install react-native-svg
+
+
+pourquoi dans portefeuille.tsx, les crypto se repetent.par exemple, bitcoin se repete 2 fois
