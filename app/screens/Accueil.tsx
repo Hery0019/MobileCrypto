@@ -1,65 +1,122 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Dimensions, SafeAreaView } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
-import { Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { FIREBASE_DB } from '../../FirebaseConfig';
 
-const screenWidth = Dimensions.get("window").width;
+interface Cryptocurrency {
+  id: string;
+  name: string;
+  symbol: string;
+  price: number;
+  change24h: number;
+  priceHistory: number[];
+}
 
-const generateRandomPrice = (basePrice: number) => {
-  const variation = (Math.random() * 2 - 1) * 0.05 * basePrice;
-  return parseFloat((basePrice + variation).toFixed(2));
-};
+const chartWidth = Dimensions.get('window').width - 40;
 
-const Accueil = ({ navigation }: { navigation: any }) => {
-  const [cryptoData, setCryptoData] = useState([
-    { id: '1', name: 'Bitcoin', price: generateRandomPrice(6000), history: [6000] },
-    { id: '2', name: 'Ethereum', price: generateRandomPrice(4000), history: [4000] },
-    { id: '3', name: 'Cardano', price: generateRandomPrice(5000), history: [5000] },
-  ]);
+const Accueil = () => {
+  const [cryptocurrencies, setCryptocurrencies] = useState<Cryptocurrency[]>([]);
 
-  const { width } = Dimensions.get('window');
-  const chartWidth = Math.min(width - 40, 600);
+  const fetchAndUpdateCryptos = async () => {
+    try {
+      const cryptosRef = collection(FIREBASE_DB, 'cryptocurrencies');
+      const querySnapshot = await getDocs(cryptosRef);
+      const cryptos: Cryptocurrency[] = [];
+
+      for (const docSnapshot of querySnapshot.docs) {
+        const crypto = docSnapshot.data() as Cryptocurrency;
+        
+        const changePercent = (Math.random() * 10) - 5;
+        const priceChange = crypto.price * (changePercent / 100);
+        const newPrice = crypto.price + priceChange;
+        
+        const newHistory = [...(crypto.priceHistory || []), newPrice].slice(-10);
+        
+        await updateDoc(doc(cryptosRef, docSnapshot.id), {
+          price: newPrice,
+          change24h: changePercent,
+          priceHistory: newHistory
+        });
+
+        cryptos.push({
+          id: docSnapshot.id,
+          ...crypto,
+          price: newPrice,
+          change24h: changePercent,
+          priceHistory: newHistory
+        });
+      }
+
+      setCryptocurrencies(cryptos);
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour des cryptos:', error);
+    }
+  };
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCryptoData((prevData) =>
-        prevData.map((crypto) => {
-          const newPrice = generateRandomPrice(crypto.price);
-          return {
-            ...crypto,
-            price: newPrice,
-            history: [...crypto.history.slice(-9), newPrice],
-          };
-        })
-      );
-    }, 10000);
+    fetchAndUpdateCryptos();
+    const interval = setInterval(fetchAndUpdateCryptos, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  const chartDatasets = cryptoData.map((crypto, index) => ({
-    data: crypto.history,
-    color: () => `rgba(${index * 50}, ${100 + index * 50}, ${255 - index * 50}, 1)`,
+  const chartDatasets = cryptocurrencies.map((crypto, index) => ({
+    data: crypto.priceHistory || [],
+    color: () => {
+      switch (crypto.symbol) {
+        case 'BTC':
+          return 'rgba(255, 193, 7, 1)'; // Jaune
+        case 'ETH':
+          return 'rgba(46, 204, 113, 1)'; // Vert
+        case 'ADA':
+          return 'rgba(231, 76, 60, 1)'; // Rouge
+        default:
+          return `rgba(${index * 50}, ${100 + index * 50}, ${255 - index * 50}, 1)`;
+      }
+    },
     strokeWidth: 2,
   }));
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <Text style={styles.title}>Cours des Cryptomonnaies</Text>
+        <Text style={styles.title}>Marché des Cryptomonnaies</Text>
+        
         <View style={styles.cryptoList}>
           <FlatList
-            data={cryptoData}
+            data={cryptocurrencies}
             keyExtractor={(item) => item.id}
             renderItem={({ item, index }) => (
               <View style={styles.cryptoItem}>
-                <Text style={[
-                  styles.cryptoName,
-                  { color: `rgba(${index * 50}, ${100 + index * 50}, ${255 - index * 50}, 1)` }
-                ]}>
-                  {item.name}
-                </Text>
-                <Text style={styles.cryptoPrice}>{item.price.toLocaleString()} USD</Text>
+                <View style={styles.cryptoInfo}>
+                  <Text style={[
+                    styles.cryptoName,
+                    { 
+                      color: item.symbol === 'BTC' 
+                        ? '#ffc107' 
+                        : item.symbol === 'ETH'
+                        ? '#2ecc71'
+                        : '#e74c3c'
+                    }
+                  ]}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.cryptoSymbol}>{item.symbol}</Text>
+                </View>
+                <View style={styles.priceContainer}>
+                  <Text style={styles.cryptoPrice}>
+                    ${item.price.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
+                  </Text>
+                  <Text style={[
+                    styles.cryptoChange,
+                    { color: item.change24h >= 0 ? '#2ecc71' : '#e74c3c' }
+                  ]}>
+                    {item.change24h >= 0 ? '+' : ''}{item.change24h.toFixed(2)}%
+                  </Text>
+                </View>
               </View>
             )}
             contentContainerStyle={styles.listContent}
@@ -70,7 +127,7 @@ const Accueil = ({ navigation }: { navigation: any }) => {
         <View style={styles.chartContainer}>
           <LineChart
             data={{
-              labels: Array.from({ length: 10 }, (_, i) => (i + 1).toString()),
+              labels: Array.from({ length: 10 }, (_, i) => ''),
               datasets: chartDatasets,
             }}
             width={chartWidth}
@@ -86,9 +143,18 @@ const Accueil = ({ navigation }: { navigation: any }) => {
               propsForLabels: {
                 fontSize: 10,
               },
+              propsForBackgroundLines: {
+                strokeWidth: 1,
+                strokeDasharray: null,
+                stroke: "#e3e3e3",
+              },
             }}
             bezier
             style={styles.chart}
+            withDots={false}
+            withInnerLines={true}
+            withVerticalLines={false}
+            withHorizontalLines={true}
           />
         </View>
       </View>
@@ -130,13 +196,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  cryptoInfo: {
+    flexDirection: 'column',
+  },
   cryptoName: {
     fontSize: 16,
     fontWeight: '600',
   },
+  cryptoSymbol: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  priceContainer: {
+    alignItems: 'flex-end',
+  },
   cryptoPrice: {
     fontSize: 16,
     color: '#2c3e50',
+    fontWeight: '600',
+  },
+  cryptoChange: {
+    fontSize: 14,
+    marginTop: 4,
   },
   listContent: {
     paddingHorizontal: 5,
