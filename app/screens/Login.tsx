@@ -28,28 +28,35 @@ const Login = () => {
       // Récupérer les données de l'utilisateur depuis Firestore
       const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
       const userDoc = await getDoc(userRef);
-      const userData = userDoc.data();
 
-      if (userDoc.exists()) {
+      if (!userDoc.exists()) {
+        // Si le document n'existe pas, créer un utilisateur par défaut
         const userInfo = {
           uid: user.uid,
           email: user.email,
-          role: userData.role || 'user',
+          role: 'user', // Role par défaut
+          displayName: user.email,
+          photoURL: null
+        };
+        setUser(userInfo);
+      } else {
+        const userData = userDoc.data();
+        const userInfo = {
+          uid: user.uid,
+          email: user.email,
+          role: userData.role || 'user', // Utiliser 'user' comme rôle par défaut si non défini
           displayName: userData.nom || user.email,
           photoURL: userData.photo || null
         };
-        
-        // Mettre à jour le contexte d'authentification
-        await setUser(userInfo);
-
-        // La navigation sera gérée automatiquement par le composant Navigation
-        // grâce au changement d'état de user dans le contexte
-      } else {
-        Alert.alert('Erreur', 'Compte utilisateur non trouvé');
+        setUser(userInfo);
       }
+      // La navigation sera gérée automatiquement par le composant Navigation
     } catch (error) {
-      console.error(error);
-      Alert.alert('Échec de la connexion', 'Email ou mot de passe incorrect');
+      console.error('Erreur de connexion:', error);
+      Alert.alert(
+        'Erreur de connexion',
+        'Veuillez vérifier votre email et mot de passe'
+      );
     }
     setLoading(false);
   };
