@@ -2,8 +2,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
-import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc, collection, getDocs, query, orderBy, limit, addDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, sendEmailVerification, signOut, User as FirebaseUser } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const Register = ({ navigation }: { navigation: any }) => {
   const [prenom, setPrenom] = useState('');
@@ -13,86 +13,62 @@ const Register = ({ navigation }: { navigation: any }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const getNextId = async () => {
-    try {
-      const usersRef = collection(FIREBASE_DB, 'utilisateurs');
-      const q = query(usersRef, orderBy('id', 'desc'), limit(1));
-      const querySnapshot = await getDocs(q);
-      
-      if (querySnapshot.empty) {
-        return 1; // Premier utilisateur
-      }
-      
-      const lastUser = querySnapshot.docs[0].data();
-      return (lastUser.id || 0) + 1;
-    } catch (error) {
-      console.error("Erreur lors de la récupération du dernier ID:", error);
-      return 1;
-    }
-  };
-
-  const initializeCryptoWallets = async (userId: string) => {
-    try {
-      // Récupérer toutes les cryptomonnaies
-      const cryptosSnapshot = await getDocs(collection(FIREBASE_DB, 'cryptocurrencies'));
-      const cryptowalletRef = collection(FIREBASE_DB, 'cryptowallet');
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', userId);
-
-      // Pour chaque crypto, créer un wallet avec valeur 0
-      const promises = cryptosSnapshot.docs.map(async (cryptoDoc) => {
-        const cryptoRef = doc(FIREBASE_DB, 'cryptocurrencies', cryptoDoc.id);
-        return addDoc(cryptowalletRef, {
-          user: userRef,
-          crypto: cryptoRef,
-          valeur: 0
-        });
-      });
-
-      await Promise.all(promises);
-      console.log("Wallets initialisés pour l'utilisateur:", userId);
-    } catch (error) {
-      console.error("Erreur lors de l'initialisation des wallets:", error);
-      throw error;
-    }
-  };
-
   const signUp = async () => {
-    if (!prenom || !nom || !email || !contact || !password) {
+    const values = {
+      prenom: prenom.trim(),
+      nom: nom.trim(),
+      email: email.trim(),
+      contact: contact.trim(),
+    };
+    if (!values.prenom || !values.nom || !values.email || !values.contact || !password) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs');
       return;
     }
 
     setLoading(true);
+    let createdUser: FirebaseUser | null = null;
     try {
-      const userCredential = await createUserWithEmailAndPassword(FIREBASE_AUTH, email, password);
-      const user = userCredential.user;
-      await sendEmailVerification(user);
+      const credential = await createUserWithEmailAndPassword(FIREBASE_AUTH, values.email, password);
+      createdUser = credential.user;
 
-      const nextId = await getNextId();
-      
-      // Créer le document utilisateur avec l'UID comme ID du document
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
-      await setDoc(userRef, {
-        id: nextId,
-        nom,
-        prenom,
-        contact,
-        email,
+      // 1. Le profil Firestore d'abord : sans lui, le compte est inutilisable.
+      //    Le document est identifié par l'uid Auth, seule identité de référence.
+      await setDoc(doc(FIREBASE_DB, 'utilisateurs', createdUser.uid), {
+        ...values,
         photoURL: null,
         role: 'user',
         porteFeuille: 0,
+        date_creation: serverTimestamp(),
       });
 
-      // Initialiser les wallets pour toutes les cryptos
-      await initializeCryptoWallets(user.uid);
-      
-      Alert.alert('Inscription réussie', 'Un e-mail de confirmation a été envoyé.');
+      // 2. Lien de vérification. Un échec ici n'invalide pas l'inscription :
+      //    Login propose de le renvoyer.
+      try {
+        await sendEmailVerification(createdUser);
+      } catch (mailError) {
+        console.warn("Envoi de l'e-mail de vérification différé:", mailError);
+      }
+
+      // 3. La session ouverte par createUser est fermée : l'utilisateur se
+      //    connecte une fois son adresse confirmée.
+      await signOut(FIREBASE_AUTH);
+      Alert.alert('Inscription réussie', 'Un e-mail de confirmation a été envoyé. Cliquez sur le lien reçu, puis connectez-vous.');
       navigation.navigate('Login');
     } catch (error) {
-      console.error(error);
+      console.error("Erreur lors de l'inscription:", error);
+      // Rollback : un compte Auth sans profil bloquerait l'adresse à vie
+      // ('email-already-in-use' à chaque nouvel essai).
+      if (createdUser) {
+        try {
+          await createdUser.delete();
+        } catch (rollbackError) {
+          console.error('Rollback du compte Auth impossible:', rollbackError);
+        }
+      }
       Alert.alert('Erreur', "Une erreur s'est produite lors de l'inscription. Veuillez réessayer.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
