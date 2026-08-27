@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  app:
+    name: Application (types, lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+
+  functions:
+    name: Cloud Functions (build, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
