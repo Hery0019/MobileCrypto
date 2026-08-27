@@ -101,15 +101,25 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // Clé de signature release : JAMAIS versionnée. Fournie via
+            // ~/.gradle/gradle.properties ou variables d'environnement (voir README).
+            def prop = { name -> findProperty(name) ?: System.getenv(name) }
+            def releaseStore = prop('MOBILECRYPTO_RELEASE_STORE_FILE')
+            if (releaseStore) {
+                storeFile file(releaseStore)
+                storePassword prop('MOBILECRYPTO_RELEASE_STORE_PASSWORD')
+                keyAlias prop('MOBILECRYPTO_RELEASE_KEY_ALIAS')
+                keyPassword prop('MOBILECRYPTO_RELEASE_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
@@ -142,6 +152,15 @@ android {
         // Ex: android.packagingOptions.pickFirsts += '**/SCCS/**'
         options.each {
             android.packagingOptions[prop] += it
+        }
+    }
+}
+
+// Refuse de produire une release signée avec la clé debug (connue de tous).
+tasks.whenTaskAdded { task ->
+    if (task.name == 'packageRelease' && android.signingConfigs.release.storeFile == null) {
+        task.doFirst {
+            throw new GradleException("Signature release non configurée : définir MOBILECRYPTO_RELEASE_STORE_FILE, _STORE_PASSWORD, _KEY_ALIAS, _KEY_PASSWORD (voir README, section Signature).")
         }
     }
 }

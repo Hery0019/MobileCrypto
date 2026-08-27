@@ -19,3 +19,23 @@ npm start         # serveur Metro seul
 
 Toutes les dépendances sont déclarées dans `package.json` ; aucune installation
 manuelle supplémentaire n'est nécessaire.
+
+## Signature Android (release)
+
+Le build release refuse de se signer avec la clé debug. Générer une clé une seule
+fois, la garder **hors du dépôt**, et la déclarer dans `~/.gradle/gradle.properties`
+(ou en variables d'environnement) :
+
+```
+MOBILECRYPTO_RELEASE_STORE_FILE=/chemin/absolu/mobilecrypto-release.keystore
+MOBILECRYPTO_RELEASE_STORE_PASSWORD=...
+MOBILECRYPTO_RELEASE_KEY_ALIAS=mobilecrypto
+MOBILECRYPTO_RELEASE_KEY_PASSWORD=...
+```
+
+Génération : `keytool -genkeypair -v -keystore mobilecrypto-release.keystore -alias mobilecrypto -keyalg RSA -keysize 2048 -validity 10000`.
+Avec EAS Build (`eas build -p android --profile production`), les identifiants sont
+gérés par EAS et cette configuration n'est pas nécessaire.
+
+> Un fichier `my-release-key.keystore` a été versionné dans l'historique git de ce
+> dépôt : il doit être considéré comme compromis et ne jamais être réutilisé.
