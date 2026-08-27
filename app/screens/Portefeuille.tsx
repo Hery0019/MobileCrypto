@@ -15,6 +15,7 @@ interface Transaction {
   id: string;
   valeur: number;
   is_depot: boolean;
+  timestamp: number;
   dateStr: string;
   timeStr: string;
 }
@@ -137,17 +138,15 @@ const Portefeuille = () => {
           id: doc.id,
           valeur: data.valeur || data.montant || 0,
           is_depot: data.is_depot !== undefined ? data.is_depot : data.type === 'depot',
+          timestamp: date.getTime(),
           dateStr: date.toLocaleDateString(),
           timeStr: date.toLocaleTimeString()
         };
       });
 
-      // Tri des transactions par date (plus récentes en premier)
-      transactions.sort((a, b) => {
-        const dateA = new Date(a.dateStr).getTime();
-        const dateB = new Date(b.dateStr).getTime();
-        return dateB - dateA;
-      });
+      // Plus récentes en premier. Trier sur la date d'origine : une chaîne
+      // localisée ('27/08/2026') n'est pas parsable par new Date().
+      transactions.sort((a, b) => b.timestamp - a.timestamp);
 
       setHistoriqueTransactions(transactions);
     } catch (error) {
