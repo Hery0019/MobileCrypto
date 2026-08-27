@@ -1,56 +1,76 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
-import { FIREBASE_DB } from '../../FirebaseConfig';
-import { collection, getDocs, getDoc, doc as firestoreDoc, updateDoc, addDoc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
-import { useAuth } from '../context/AuthContext';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { QueryDocumentSnapshot } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
+import { fetchTransactionsPage, fetchUsersPage, subscribePendingCashRequests } from '../services/firestore';
+import { functionsErrorMessage, reviewCashMovement } from '../services/functions';
+import { CashRequest, Transaction, UserProfile } from '../services/model';
 
-interface User {
-  id: string;
-  email: string;
-  role: string;
-  porteFeuille: number;
-}
+type Tab = 'notifications' | 'users' | 'transactions';
+const PAGE_SIZE = 25;
+const PENDING_LIMIT = 50;
 
-interface Transaction {
-  id: string;
-  is_achat: boolean;
-  date_heure: Date;
-  valeur: number;
-  idUtilisateur: string;
-  id_crypto: string;
-  cryptoName?: string;
-  cryptoSymbol?: string;
-  userEmail?: string;
-}
+const formatMoney = (value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const formatDateTime = (date: Date | null) => (date ? `${date.toLocaleDateString()} ${date.toLocaleTimeString()}` : '—');
 
-interface Notification {
-  id: string;
-  type: 'depot' | 'retrait';
-  montant: number;
-  utilisateur: any;
-  userEmail: string;
-  status: 'en_attente' | 'validee' | 'refusee';
-  date_creation: Date;
-  date_validation?: Date;
+/** Liste paginée générique (utilisateurs, transactions) chargée à la demande. */
+function usePagedList<T>(fetchPage: (size: number, after?: QueryDocumentSnapshot) => Promise<{ items: T[]; cursor?: QueryDocumentSnapshot }>, active: boolean) {
+  const [items, setItems] = useState<T[]>([]);
+  const [cursor, setCursor] = useState<QueryDocumentSnapshot | undefined>();
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMore = useCallback(async (reset = false) => {
+    if (loading) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await fetchPage(PAGE_SIZE, reset ? undefined : cursor);
+      setItems((current) => (reset ? page.items : [...current, ...page.items]));
+      setCursor(page.cursor);
+      setHasMore(page.cursor !== undefined);
+      setLoaded(true);
+    } catch (e) {
+      console.error('Chargement de la liste impossible:', e);
+      setError('Chargement impossible. Réessayez.');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchPage, cursor, loading]);
+
+  // Chargement uniquement quand l'onglet devient actif, une seule fois.
+  useEffect(() => {
+    if (active && !loaded && !loading) {
+      void loadMore(true);
+    }
+  }, [active, loaded, loading, loadMore]);
+
+  return { items, hasMore, loading, error, loadMore, refresh: () => loadMore(true) };
 }
 
 const Admin = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'notifications'>('notifications');
   const { signOut } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>('notifications');
+  const [pending, setPending] = useState<CashRequest[]>([]);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const users = usePagedList(fetchUsersPage, activeTab === 'users');
+  const transactions = usePagedList(fetchTransactionsPage, activeTab === 'transactions');
 
-  const fetchData = async () => {
-    fetchUsers();
-    fetchTransactions();
-    fetchNotifications();
-  };
+  useEffect(
+    () =>
+      subscribePendingCashRequests(PENDING_LIMIT, setPending, (error) => {
+        console.error('Abonnement aux demandes impossible:', error);
+        setPendingError('Impossible de récupérer les demandes en attente.');
+      }),
+    []
+  );
 
   const handleLogout = async () => {
     try {
@@ -61,176 +81,44 @@ const Admin = () => {
     }
   };
 
-  const fetchUsers = async () => {
+  const review = async (request: CashRequest, approve: boolean) => {
+    if (reviewing) {
+      return;
+    }
+    setReviewing(request.id);
     try {
-      const usersRef = collection(FIREBASE_DB, 'utilisateurs');
-      const querySnapshot = await getDocs(usersRef);
-      
-      const usersData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      } as User));
-      
-      setUsers(usersData);
+      // Le serveur vérifie le statut et le solde dans une transaction ; la
+      // liste se met à jour d'elle-même via l'abonnement.
+      await reviewCashMovement({ requestId: request.id, approve });
+      Alert.alert('Succès', `La demande a été ${approve ? 'validée' : 'refusée'}.`);
     } catch (error) {
-      console.error('Erreur lors de la récupération des utilisateurs:', error);
+      console.error('Validation refusée:', error);
+      Alert.alert('Impossible', functionsErrorMessage(error, 'Une erreur est survenue lors de la validation'));
+    } finally {
+      setReviewing(null);
     }
   };
 
-  // Mapping des IDs aux noms des cryptos
-  const cryptoNames: { [key: string]: { name: string, symbol: string } } = {
-    '1': { name: 'Bitcoin', symbol: 'BTC' },
-    '2': { name: 'Ethereum', symbol: 'ETH' },
-    '3': { name: 'Cardano', symbol: 'ADA' }
+  const confirmReview = (request: CashRequest, approve: boolean) => {
+    Alert.alert(
+      approve ? 'Valider la demande' : 'Refuser la demande',
+      `${request.type === 'depot' ? 'Dépôt' : 'Retrait'} de ${formatMoney(request.montant)} pour ${request.userEmail ?? request.utilisateur}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: approve ? 'Valider' : 'Refuser', style: approve ? 'default' : 'destructive', onPress: () => review(request, approve) },
+      ]
+    );
   };
 
-  const fetchTransactions = async () => {
-    try {
-      const transactionsRef = collection(FIREBASE_DB, 'transactions');
-      const querySnapshot = await getDocs(transactionsRef);
-      
-      const transactionsPromises = querySnapshot.docs.map(async (docSnapshot) => {
-        const data = docSnapshot.data();
-        const cryptoId = data.id_crypto.toString();
-        const cryptoInfo = cryptoNames[cryptoId] || { name: 'Crypto inconnue', symbol: '???' };
-        
-        return {
-          id: docSnapshot.id,
-          ...data,
-          date_heure: data.date_heure.toDate(),
-          cryptoName: cryptoInfo.name,
-          cryptoSymbol: cryptoInfo.symbol,
-          userEmail: data.idUtilisateur
-        } as Transaction;
-      });
-
-      const loadedTransactions = await Promise.all(transactionsPromises);
-      loadedTransactions.sort((a, b) => b.date_heure.getTime() - a.date_heure.getTime());
-      setTransactions(loadedTransactions);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des transactions:', error);
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      // Requête simplifiée sans orderBy pour éviter le besoin d'un index composite
-      const notificationsQuery = query(
-        collection(FIREBASE_DB, 'notifications'),
-        where('status', '==', 'en_attente')
-      );
-
-      const notificationsSnapshot = await getDocs(notificationsQuery);
-      const notificationsData = notificationsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        date_creation: doc.data().date_creation?.toDate()
-      })) as Notification[];
-
-      // Tri côté client
-      notificationsData.sort((a, b) => {
-        if (!a.date_creation || !b.date_creation) return 0;
-        return b.date_creation.getTime() - a.date_creation.getTime();
-      });
-
-      setNotifications(notificationsData);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des notifications:', error);
-      Alert.alert(
-        'Erreur',
-        'Impossible de récupérer les notifications. Veuillez réessayer.'
-      );
-    }
-  };
-
-  const handleValidateTransaction = async (notification: Notification, isApproved: boolean) => {
-    try {
-      // Mettre à jour la notification
-      const notificationRef = firestoreDoc(FIREBASE_DB, 'notifications', notification.id);
-      await updateDoc(notificationRef, {
-        status: isApproved ? 'validee' : 'refusee',
-        date_validation: serverTimestamp()
-      });
-
-      if (isApproved) {
-        // Trouver l'ID de l'utilisateur à partir de son email
-        const usersRef = collection(FIREBASE_DB, 'utilisateurs');
-        const q = query(usersRef, where('email', '==', notification.userEmail));
-        const querySnapshot = await getDocs(q);
-        
-        if (querySnapshot.empty) {
-          Alert.alert('Erreur', 'Utilisateur non trouvé');
-          return;
-        }
-
-        const userDoc = querySnapshot.docs[0];
-        const userData = userDoc.data();
-        const userRef = firestoreDoc(FIREBASE_DB, 'utilisateurs', userDoc.id);
-
-        // Convertir les montants en nombres
-        const currentBalance = Number(userData.porteFeuille || 0);
-        const montantOperation = Number(notification.montant);
-        const newBalance = notification.type === 'depot' 
-          ? currentBalance + montantOperation
-          : currentBalance - montantOperation;
-
-        console.log('Calcul du solde:', {
-          currentBalance,
-          montantOperation,
-          newBalance,
-          type: notification.type
-        });
-
-        if (notification.type === 'retrait' && newBalance < 0) {
-          Alert.alert('Erreur', 'Le solde de l\'utilisateur serait négatif après cette opération');
-          return;
-        }
-
-        // Mettre à jour le solde
-        await updateDoc(userRef, {
-          porteFeuille: newBalance
-        });
-
-        // Créer une transaction dans l'historique
-        await addDoc(collection(FIREBASE_DB, 'historiquedepot'), {
-          utilisateur: userDoc.id,
-          valeur: montantOperation,
-          dateheure: serverTimestamp(),
-          is_depot: notification.type === 'depot'
-        });
-
-        console.log('Mise à jour du solde réussie:', {
-          userId: userDoc.id,
-          oldBalance: currentBalance,
-          newBalance: newBalance,
-          amount: montantOperation,
-          type: notification.type
-        });
-      }
-
-      // Rafraîchir les données
-      fetchData();
-      Alert.alert(
-        'Succès',
-        `La demande a été ${isApproved ? 'validée' : 'refusée'} avec succès`
-      );
-    } catch (error) {
-      console.error('Erreur lors de la validation:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue lors de la validation');
-    }
-  };
-
-  const renderUser = ({ item }: { item: User }) => (
+  const renderUser = ({ item }: { item: UserProfile }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{item.email}</Text>
-        <Text style={[styles.badge, { backgroundColor: item.role === 'admin' ? '#3498db' : '#2ecc71' }]}>
-          {item.role || 'user'}
-        </Text>
+        <Text style={[styles.badge, { backgroundColor: item.role === 'admin' ? '#3498db' : '#2ecc71' }]}>{item.role}</Text>
       </View>
       <View style={styles.cardBody}>
-        <Text style={styles.balanceLabel}>Solde:</Text>
-        <Text style={styles.balanceValue}>${item.porteFeuille?.toLocaleString() || '0'}</Text>
+        <Text style={styles.muted}>{item.prenom} {item.nom}</Text>
+        <Text style={styles.balanceValue}>{formatMoney(item.porteFeuille)}</Text>
       </View>
     </View>
   );
@@ -238,70 +126,71 @@ const Admin = () => {
   const renderTransaction = ({ item }: { item: Transaction }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={[styles.transactionType, { color: item.is_achat ? '#2ecc71' : '#e74c3c' }]}>
-          {item.is_achat ? 'ACHAT' : 'VENTE'}
-        </Text>
-        <Text style={styles.date}>
-          {item.date_heure.toLocaleDateString()} {item.date_heure.toLocaleTimeString()}
-        </Text>
+        <Text style={[styles.strong, { color: item.is_achat ? '#2ecc71' : '#e74c3c' }]}>{item.is_achat ? 'ACHAT' : 'VENTE'}</Text>
+        <Text style={styles.muted}>{formatDateTime(item.date_heure)}</Text>
       </View>
       <View style={styles.cardBody}>
         <View>
-          <Text style={styles.cryptoName}>{item.cryptoName}</Text>
-          <Text style={styles.cryptoSymbol}>{item.cryptoSymbol}</Text>
+          <Text style={styles.strong}>{item.cryptoName}</Text>
+          <Text style={styles.muted}>{item.valeur} {item.cryptoSymbol} à {formatMoney(item.prix_unitaire)}</Text>
         </View>
-        <View style={styles.transactionDetails}>
-          <Text style={styles.amount}>{item.valeur} {item.cryptoSymbol}</Text>
-          <Text style={styles.userEmail}>Par: {item.userEmail}</Text>
+        <View style={styles.right}>
+          <Text style={styles.strong}>{formatMoney(item.montant_total)}</Text>
+          <Text style={styles.muted}>{item.userEmail ?? 'compte supprimé'}</Text>
         </View>
       </View>
     </View>
   );
 
-  const renderNotification = ({ item }: { item: Notification }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.typeContainer}>
-          <Ionicons 
-            name={item.type === 'depot' ? 'arrow-down-circle' : 'arrow-up-circle'} 
-            size={24} 
-            color={item.type === 'depot' ? '#2ecc71' : '#e74c3c'} 
-          />
-          <Text style={[styles.transactionType, { 
-            color: item.type === 'depot' ? '#2ecc71' : '#e74c3c',
-            marginLeft: 8
-          }]}>
-            {item.type.toUpperCase()}
-          </Text>
+  const renderRequest = ({ item }: { item: CashRequest }) => {
+    const busy = reviewing === item.id;
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.typeContainer}>
+            <Ionicons name={item.type === 'depot' ? 'arrow-down-circle' : 'arrow-up-circle'} size={24} color={item.type === 'depot' ? '#2ecc71' : '#e74c3c'} />
+            <Text style={[styles.strong, { color: item.type === 'depot' ? '#2ecc71' : '#e74c3c', marginLeft: 8 }]}>{item.type.toUpperCase()}</Text>
+          </View>
+          <Text style={styles.muted}>{formatDateTime(item.date_creation)}</Text>
         </View>
-        <Text style={styles.date}>
-          {item.date_creation.toLocaleDateString()} {item.date_creation.toLocaleTimeString()}
-        </Text>
-      </View>
-      <View style={styles.cardBody}>
-        <View>
-          <Text style={styles.userEmail}>{item.userEmail}</Text>
-          <Text style={styles.amount}>Montant: ${item.montant}</Text>
-        </View>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.approveButton]}
-            onPress={() => handleValidateTransaction(item, true)}
-          >
-            <Ionicons name="checkmark-circle-outline" size={20} color="white" />
-            <Text style={styles.actionButtonText}>Valider</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => handleValidateTransaction(item, false)}
-          >
-            <Ionicons name="close-circle-outline" size={20} color="white" />
-            <Text style={styles.actionButtonText}>Refuser</Text>
-          </TouchableOpacity>
+        <View style={styles.cardBody}>
+          <View>
+            <Text style={styles.muted}>{item.userEmail ?? item.utilisateur}</Text>
+            <Text style={styles.strong}>Montant : {formatMoney(item.montant)}</Text>
+          </View>
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={[styles.actionButton, styles.approveButton]} onPress={() => confirmReview(item, true)} disabled={reviewing !== null}>
+              {busy ? <ActivityIndicator color="#fff" /> : <Ionicons name="checkmark-circle-outline" size={20} color="white" />}
+              <Text style={styles.actionButtonText}>Valider</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionButton, styles.rejectButton]} onPress={() => confirmReview(item, false)} disabled={reviewing !== null}>
+              <Ionicons name="close-circle-outline" size={20} color="white" />
+              <Text style={styles.actionButtonText}>Refuser</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
+    );
+  };
+
+  const renderFooter = (list: { hasMore: boolean; loading: boolean; error: string | null; loadMore: () => void }) => (
+    <View style={styles.footer}>
+      {list.error && <Text style={styles.errorText}>{list.error}</Text>}
+      {list.loading ? (
+        <ActivityIndicator color="#2c3e50" />
+      ) : list.hasMore || list.error ? (
+        <TouchableOpacity style={styles.loadMore} onPress={() => list.loadMore()}>
+          <Text style={styles.loadMoreText}>{list.error ? 'Réessayer' : 'Charger plus'}</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
+
+  const tabs: { key: Tab; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+    { key: 'notifications', label: `Demandes${pending.length ? ` (${pending.length})` : ''}`, icon: 'notifications-outline' },
+    { key: 'users', label: 'Utilisateurs', icon: 'people-outline' },
+    { key: 'transactions', label: 'Transactions', icon: 'swap-horizontal-outline' },
+  ];
 
   return (
     <View style={styles.container}>
@@ -313,72 +202,47 @@ const Admin = () => {
       </View>
 
       <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'notifications' && styles.activeTab]}
-          onPress={() => setActiveTab('notifications')}
-        >
-          <Ionicons 
-            name="notifications-outline" 
-            size={24} 
-            color={activeTab === 'notifications' ? '#2c3e50' : '#7f8c8d'}
-          />
-          <Text style={[styles.tabText, activeTab === 'notifications' && styles.activeTabText]}>
-            Notifications
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'users' && styles.activeTab]}
-          onPress={() => setActiveTab('users')}
-        >
-          <Ionicons 
-            name="people-outline" 
-            size={24} 
-            color={activeTab === 'users' ? '#2c3e50' : '#7f8c8d'}
-          />
-          <Text style={[styles.tabText, activeTab === 'users' && styles.activeTabText]}>
-            Utilisateurs
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'transactions' && styles.activeTab]}
-          onPress={() => setActiveTab('transactions')}
-        >
-          <Ionicons 
-            name="swap-horizontal-outline" 
-            size={24} 
-            color={activeTab === 'transactions' ? '#2c3e50' : '#7f8c8d'}
-          />
-          <Text style={[styles.tabText, activeTab === 'transactions' && styles.activeTabText]}>
-            Transactions
-          </Text>
-        </TouchableOpacity>
+        {tabs.map((tab) => (
+          <TouchableOpacity key={tab.key} style={[styles.tab, activeTab === tab.key && styles.activeTab]} onPress={() => setActiveTab(tab.key)}>
+            <Ionicons name={tab.icon} size={24} color={activeTab === tab.key ? '#2c3e50' : '#7f8c8d'} />
+            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>{tab.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {activeTab === 'notifications' ? (
+      {activeTab === 'notifications' && (
         <FlatList
-          data={notifications}
-          renderItem={renderNotification}
-          keyExtractor={item => item.id}
+          data={pending}
+          renderItem={renderRequest}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Aucune notification en attente</Text>
+              <Text style={styles.emptyText}>{pendingError ?? 'Aucune demande en attente'}</Text>
             </View>
           }
         />
-      ) : activeTab === 'users' ? (
+      )}
+      {activeTab === 'users' && (
         <FlatList
-          data={users}
+          data={users.items}
           renderItem={renderUser}
-          keyExtractor={item => item.id}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
+          onEndReached={() => users.hasMore && !users.loading && users.loadMore()}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter(users)}
         />
-      ) : (
+      )}
+      {activeTab === 'transactions' && (
         <FlatList
-          data={transactions}
+          data={transactions.items}
           renderItem={renderTransaction}
-          keyExtractor={item => item.id}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
+          onEndReached={() => transactions.hasMore && !transactions.loading && transactions.loadMore()}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter(transactions)}
         />
       )}
     </View>
@@ -386,168 +250,37 @@ const Admin = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f6fa',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  logoutButton: {
-    padding: 8,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#2c3e50',
-  },
-  tabText: {
-    fontSize: 12,
-    color: '#7f8c8d',
-    marginTop: 4,
-  },
-  activeTabText: {
-    color: '#2c3e50',
-    fontWeight: 'bold',
-  },
-  list: {
-    padding: 15,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  cardBody: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  balanceLabel: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  balanceValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2ecc71',
-  },
-  typeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  transactionType: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  date: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  cryptoName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  cryptoSymbol: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginTop: 2,
-  },
-  transactionDetails: {
-    alignItems: 'flex-end',
-  },
-  amount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginBottom: 4,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    minWidth: 100,
-    justifyContent: 'center',
-  },
-  approveButton: {
-    backgroundColor: '#2ecc71',
-  },
-  rejectButton: {
-    backgroundColor: '#e74c3c',
-  },
-  actionButtonText: {
-    color: '#fff',
-    marginLeft: 4,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  emptyContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#7f8c8d',
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#f5f6fa' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee' },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#2c3e50' },
+  logoutButton: { padding: 8 },
+  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 10 },
+  activeTab: { borderBottomWidth: 2, borderBottomColor: '#2c3e50' },
+  tabText: { fontSize: 12, color: '#7f8c8d', marginTop: 4 },
+  activeTabText: { color: '#2c3e50', fontWeight: 'bold' },
+  list: { padding: 15 },
+  card: { backgroundColor: '#fff', borderRadius: 10, padding: 15, marginBottom: 10, elevation: 3 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50', flex: 1 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, color: '#fff', fontSize: 12, fontWeight: '500', overflow: 'hidden' },
+  cardBody: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  right: { alignItems: 'flex-end' },
+  strong: { fontSize: 16, fontWeight: '600', color: '#2c3e50' },
+  muted: { fontSize: 14, color: '#7f8c8d' },
+  balanceValue: { fontSize: 18, fontWeight: 'bold', color: '#2ecc71' },
+  typeContainer: { flexDirection: 'row', alignItems: 'center' },
+  actionButtons: { flexDirection: 'row', gap: 8 },
+  actionButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, minWidth: 100, justifyContent: 'center' },
+  approveButton: { backgroundColor: '#2ecc71' },
+  rejectButton: { backgroundColor: '#e74c3c' },
+  actionButtonText: { color: '#fff', marginLeft: 4, fontSize: 14, fontWeight: '500' },
+  emptyContainer: { padding: 20, alignItems: 'center' },
+  emptyText: { fontSize: 16, color: '#7f8c8d', textAlign: 'center' },
+  footer: { padding: 15, alignItems: 'center' },
+  errorText: { color: '#e74c3c', marginBottom: 8 },
+  loadMore: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 6, backgroundColor: '#fff', borderWidth: 1, borderColor: '#2c3e50' },
+  loadMoreText: { color: '#2c3e50', fontWeight: '500' },
 });
 
 export default Admin;
