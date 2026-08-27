@@ -1,34 +1,31 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, initializeAuth, getReactNativePersistence } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import { getReactNativePersistence, initializeAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
+import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Your web app's Firebase configuration
+// Configuration publique du projet Firebase (identifie le projet ; la
+// sécurité repose sur les règles et les Cloud Functions, pas sur ces valeurs).
 const firebaseConfig = {
-  apiKey: "AIzaSyBMsNTkUZEEHLZUvU5UChIDoZSgw0Thf-E",
-  authDomain: "crypto-3e7df.firebaseapp.com",
-  projectId: "crypto-3e7df",
-  storageBucket: "crypto-3e7df.appspot.com",
-  messagingSenderId: "459564815290",
-  appId: "1:459564815290:web:dd597f2ab2da0e792f4383"
+  apiKey: 'AIzaSyBMsNTkUZEEHLZUvU5UChIDoZSgw0Thf-E',
+  authDomain: 'crypto-3e7df.firebaseapp.com',
+  projectId: 'crypto-3e7df',
+  storageBucket: 'crypto-3e7df.appspot.com',
+  messagingSenderId: '459564815290',
+  appId: '1:459564815290:web:dd597f2ab2da0e792f4383',
 };
 
-// Initialize Firebase
-let FIREBASE_APP;
-if (getApps().length === 0) {
-  FIREBASE_APP = initializeApp(firebaseConfig);
-} else {
-  FIREBASE_APP = getApp();
-}
+/** Doit correspondre à functions/src/admin.ts (REGION). */
+export const FUNCTIONS_REGION = 'europe-west1';
 
-// Initialize Auth with AsyncStorage persistence
+const FIREBASE_APP = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
 const FIREBASE_AUTH = initializeAuth(FIREBASE_APP, {
-  persistence: getReactNativePersistence(AsyncStorage)
+  persistence: getReactNativePersistence(AsyncStorage),
 });
-
 const FIREBASE_DB = getFirestore(FIREBASE_APP);
 const FIREBASE_STORAGE = getStorage(FIREBASE_APP);
+const FIREBASE_FUNCTIONS = getFunctions(FIREBASE_APP, FUNCTIONS_REGION);
 
-export { FIREBASE_APP, FIREBASE_AUTH, FIREBASE_DB, FIREBASE_STORAGE };
+export { FIREBASE_APP, FIREBASE_AUTH, FIREBASE_DB, FIREBASE_STORAGE, FIREBASE_FUNCTIONS };
