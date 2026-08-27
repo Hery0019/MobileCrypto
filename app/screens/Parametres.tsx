@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } f
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
+import { sendPasswordResetEmail } from 'firebase/auth';
 
 const Parametres = () => {
   const { user, signOut } = useAuth();
@@ -50,7 +51,7 @@ const Parametres = () => {
 
   const handlePasswordChange = () => {
     if (user?.email) {
-      FIREBASE_AUTH.sendPasswordResetEmail(user.email)
+      sendPasswordResetEmail(FIREBASE_AUTH, user.email)
         .then(() => {
           Alert.alert(
             'Email envoyé',
