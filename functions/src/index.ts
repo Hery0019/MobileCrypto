@@ -7,3 +7,4 @@ import './admin';
 
 export { REGION } from './admin';
 export { placeOrder } from './orders';
+export { requestCashMovement, reviewCashMovement } from './cashMovements';
