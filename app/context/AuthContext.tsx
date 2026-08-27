@@ -52,7 +52,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // connexion, déconnexion, révocation de token).
     const unsubscribe = onAuthStateChanged(FIREBASE_AUTH, async (firebaseUser) => {
       try {
-        setUser(firebaseUser ? await loadProfile(firebaseUser) : null);
+        // Un email non vérifié ne donne pas accès à l'application : l'email sert
+        // d'identité affichée à l'admin, il doit appartenir à l'utilisateur.
+        // Login se charge d'expliquer la situation et de renvoyer le lien.
+        const usable = firebaseUser && firebaseUser.emailVerified;
+        setUser(usable ? await loadProfile(firebaseUser) : null);
       } catch (error) {
         console.error('Impossible de charger le profil utilisateur:', error);
         setUser(null);
@@ -65,7 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const refreshProfile = useCallback(async () => {
     const current = FIREBASE_AUTH.currentUser;
-    setUser(current ? await loadProfile(current) : null);
+    setUser(current && current.emailVerified ? await loadProfile(current) : null);
   }, []);
 
   const signOut = useCallback(async () => {

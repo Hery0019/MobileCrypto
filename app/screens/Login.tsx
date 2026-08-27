@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { sendEmailVerification, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 
 const Login = () => {
@@ -19,7 +19,38 @@ const Login = () => {
 
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(FIREBASE_AUTH, email.trim(), password);
+      const credential = await signInWithEmailAndPassword(FIREBASE_AUTH, email.trim(), password);
+
+      if (!credential.user.emailVerified) {
+        // AuthProvider ignore les comptes non vérifiés : on reste sur cet écran.
+        // La session Firebase est conservée le temps du choix pour pouvoir
+        // renvoyer le lien, puis fermée dans tous les cas.
+        const closeSession = () => signOut(FIREBASE_AUTH).catch(() => undefined);
+        Alert.alert(
+          'Adresse e-mail non vérifiée',
+          'Confirmez votre adresse en cliquant sur le lien reçu par e-mail, puis reconnectez-vous.',
+          [
+            {
+              text: "Renvoyer l'e-mail",
+              onPress: async () => {
+                try {
+                  await sendEmailVerification(credential.user);
+                  Alert.alert('E-mail envoyé', 'Vérifiez votre boîte de réception (et les spams).');
+                } catch (sendError) {
+                  console.error("Renvoi de l'e-mail de vérification impossible:", sendError);
+                  Alert.alert('Erreur', "Impossible d'envoyer l'e-mail pour le moment. Réessayez plus tard.");
+                } finally {
+                  await closeSession();
+                }
+              },
+            },
+            { text: 'OK', onPress: closeSession },
+          ],
+          { cancelable: false }
+        );
+        setLoading(false);
+        return;
+      }
       // Le profil est chargé par AuthProvider (onAuthStateChanged) et la
       // navigation bascule automatiquement ; cet écran est alors démonté.
     } catch (error) {
