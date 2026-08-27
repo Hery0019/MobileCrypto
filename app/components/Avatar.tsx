@@ -1,13 +1,13 @@
 import React from 'react';
 import { View, TouchableOpacity, Image, Text, StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { FIREBASE_STORAGE, FIREBASE_DB } from '../../FirebaseConfig';
+import { FIREBASE_STORAGE } from '../../FirebaseConfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { updateUserPresentation } from '../services/firestore';
 
 const Avatar = () => {
-  const { user, refreshProfile } = useAuth();
+  const { user } = useAuth();
   const avatarUrl = user?.photoURL ?? null;
 
   const pickImage = async () => {
@@ -67,15 +67,10 @@ const Avatar = () => {
       
       const downloadURL = await getDownloadURL(storageRef);
       
-      // Mise à jour de Firestore
+      // Le profil est abonné en temps réel dans AuthProvider : l'avatar se
+      // met à jour dès que Firestore confirme l'écriture.
       if (user?.uid) {
-        const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
-        await updateDoc(userRef, {
-          photoURL: downloadURL
-        });
-
-        // Le contexte relit le profil Firestore : une seule source de vérité
-        await refreshProfile();
+        await updateUserPresentation(user.uid, { photoURL: downloadURL });
       }
     } catch (error) {
       console.error('Erreur lors du téléchargement:', error);
