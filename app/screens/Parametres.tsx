@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { EmailAuthProvider, reauthenticateWithCredential, sendPasswordResetEmail } from 'firebase/auth';
 
 const Parametres = () => {
   const { user, signOut } = useAuth();
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [biometrics, setBiometrics] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -25,28 +28,48 @@ const Parametres = () => {
       'Supprimer le compte',
       'Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.',
       [
+        { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Annuler',
-          style: 'cancel',
-        },
-        {
-          text: 'Supprimer',
+          text: 'Continuer',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              const user = FIREBASE_AUTH.currentUser;
-              if (user) {
-                await user.delete();
-                Alert.alert('Succès', 'Votre compte a été supprimé avec succès');
-              }
-            } catch (error) {
-              console.error('Erreur lors de la suppression du compte:', error);
-              Alert.alert('Erreur', 'Impossible de supprimer le compte');
-            }
-          },
+          // Firebase exige une authentification récente pour delete() :
+          // on demande le mot de passe plutôt que d'échouer silencieusement.
+          onPress: () => setShowDeleteModal(true),
         },
       ]
     );
+  };
+
+  const confirmDeleteAccount = async () => {
+    const current = FIREBASE_AUTH.currentUser;
+    if (!current || !current.email) {
+      Alert.alert('Erreur', 'Session expirée, reconnectez-vous.');
+      return;
+    }
+    if (!deletePassword) {
+      Alert.alert('Erreur', 'Saisissez votre mot de passe pour confirmer.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await reauthenticateWithCredential(current, EmailAuthProvider.credential(current.email, deletePassword));
+      // La suppression du compte Auth déclenche onAuthStateChanged(null) :
+      // le contexte et la navigation basculent d'eux-mêmes. Les données
+      // Firestore/Storage sont purgées côté serveur (déclencheur sur suppression).
+      await current.delete();
+      setShowDeleteModal(false);
+      Alert.alert('Compte supprimé', 'Votre compte a été supprimé.');
+    } catch (error: any) {
+      console.error('Erreur lors de la suppression du compte:', error);
+      const message =
+        error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential'
+          ? 'Mot de passe incorrect.'
+          : 'Impossible de supprimer le compte pour le moment.';
+      Alert.alert('Erreur', message);
+    } finally {
+      setDeleting(false);
+      setDeletePassword('');
+    }
   };
 
   const handlePasswordChange = () => {
@@ -144,6 +167,40 @@ const Parametres = () => {
         <Text style={styles.sectionTitle}>À propos</Text>
         <Text style={styles.version}>Version 1.0.0</Text>
       </View>
+
+      <Modal visible={showDeleteModal} transparent animationType="fade" onRequestClose={() => setShowDeleteModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Confirmer la suppression</Text>
+            <Text style={styles.modalText}>Saisissez votre mot de passe pour supprimer définitivement votre compte.</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Mot de passe"
+              secureTextEntry
+              autoCapitalize="none"
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              editable={!deleting}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => { setShowDeleteModal(false); setDeletePassword(''); }}
+                disabled={deleting}
+              >
+                <Text style={styles.modalButtonText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalDelete]}
+                onPress={confirmDeleteAccount}
+                disabled={deleting}
+              >
+                {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalButtonText}>Supprimer</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -231,6 +288,57 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCard: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 8,
+  },
+  modalText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 15,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 5,
+    padding: 10,
+    marginBottom: 15,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginHorizontal: 5,
+  },
+  modalCancel: {
+    backgroundColor: '#95a5a6',
+  },
+  modalDelete: {
+    backgroundColor: '#e74c3c',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
 
