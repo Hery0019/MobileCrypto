@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
 import { EmailAuthProvider, reauthenticateWithCredential, sendPasswordResetEmail } from 'firebase/auth';
+import { authErrorMessage } from '../utils/authErrors';
 
 const Parametres = () => {
   const { user, signOut } = useAuth();
@@ -59,13 +60,9 @@ const Parametres = () => {
       await current.delete();
       setShowDeleteModal(false);
       Alert.alert('Compte supprimé', 'Votre compte a été supprimé.');
-    } catch (error: any) {
+    } catch (error) {
       console.error('Erreur lors de la suppression du compte:', error);
-      const message =
-        error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential'
-          ? 'Mot de passe incorrect.'
-          : 'Impossible de supprimer le compte pour le moment.';
-      Alert.alert('Erreur', message);
+      Alert.alert('Erreur', authErrorMessage(error, 'Impossible de supprimer le compte pour le moment.'));
     } finally {
       setDeleting(false);
       setDeletePassword('');
@@ -83,7 +80,7 @@ const Parametres = () => {
         })
         .catch((error) => {
           console.error('Erreur lors de l\'envoi de l\'email:', error);
-          Alert.alert('Erreur', 'Impossible d\'envoyer l\'email de réinitialisation');
+          Alert.alert('Erreur', authErrorMessage(error, "Impossible d'envoyer l'e-mail de réinitialisation."));
         });
     }
   };

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
 import { sendEmailVerification, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
+import { authErrorMessage } from '../utils/authErrors';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -55,10 +56,7 @@ const Login = () => {
       // navigation bascule automatiquement ; cet écran est alors démonté.
     } catch (error) {
       console.error('Erreur de connexion:', error);
-      Alert.alert(
-        'Erreur de connexion',
-        'Veuillez vérifier votre email et mot de passe'
-      );
+      Alert.alert('Erreur de connexion', authErrorMessage(error, 'Connexion impossible. Réessayez.'));
       setLoading(false);
     }
   };

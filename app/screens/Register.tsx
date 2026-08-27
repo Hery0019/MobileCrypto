@@ -4,6 +4,7 @@ import { View, Text, TextInput, Button, StyleSheet, ActivityIndicator, Alert } f
 import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
 import { createUserWithEmailAndPassword, sendEmailVerification, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { authErrorMessage } from '../utils/authErrors';
 
 const Register = ({ navigation }: { navigation: any }) => {
   const [prenom, setPrenom] = useState('');
@@ -65,7 +66,7 @@ const Register = ({ navigation }: { navigation: any }) => {
           console.error('Rollback du compte Auth impossible:', rollbackError);
         }
       }
-      Alert.alert('Erreur', "Une erreur s'est produite lors de l'inscription. Veuillez réessayer.");
+      Alert.alert('Erreur', authErrorMessage(error, "Une erreur s'est produite lors de l'inscription. Veuillez réessayer."));
     } finally {
       setLoading(false);
     }
