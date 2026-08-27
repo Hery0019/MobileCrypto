@@ -1,4 +1,4 @@
-package com.hery0019.mobileCrypto
+package com.rvtox.mobileCrypto
 
 import android.os.Build
 import android.os.Bundle

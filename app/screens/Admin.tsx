@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
-import { collection, getDocs, getDoc, doc as firestoreDoc, updateDoc, serverTimestamp, query, where, addDoc } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc as firestoreDoc, updateDoc, addDoc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 interface User {
   id: string;
@@ -27,11 +28,12 @@ interface Transaction {
 interface Notification {
   id: string;
   type: 'depot' | 'retrait';
-  userId: string;
+  montant: number;
+  utilisateur: any;
   userEmail: string;
-  amount: number;
-  status: 'pending' | 'approved' | 'rejected';
-  createdAt: Date;
+  status: 'en_attente' | 'validee' | 'refusee';
+  date_creation: Date;
+  date_validation?: Date;
 }
 
 const Admin = () => {
@@ -41,6 +43,16 @@ const Admin = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'notifications'>('notifications');
   const { setUser } = useAuth();
   const navigation = useNavigation();
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    fetchUsers();
+    fetchTransactions();
+    fetchNotifications();
+  };
 
   const handleLogout = async () => {
     try {
@@ -52,87 +64,6 @@ const Admin = () => {
       });
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      const notificationsRef = collection(FIREBASE_DB, 'notifications');
-      const q = query(notificationsRef, where('status', '==', 'pending'));
-      const querySnapshot = await getDocs(q);
-      
-      const notificationsData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate() || new Date(),
-      })) as Notification[];
-
-      notificationsData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      setNotifications(notificationsData);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des notifications:', error);
-    }
-  };
-
-  const handleNotificationAction = async (notification: Notification, isApproved: boolean) => {
-    try {
-      console.log('Traitement de la notification:', notification); // Log pour déboguer
-
-      const notificationRef = firestoreDoc(FIREBASE_DB, 'notifications', notification.id);
-      
-      // Trouver l'utilisateur par email
-      const usersRef = collection(FIREBASE_DB, 'utilisateurs');
-      const q = query(usersRef, where('email', '==', notification.userEmail));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        console.error('Utilisateur non trouvé:', notification.userEmail);
-        Alert.alert('Erreur', 'Utilisateur non trouvé');
-        return;
-      }
-
-      const userDoc = querySnapshot.docs[0];
-      const userData = userDoc.data();
-      const currentBalance = userData.porteFeuille || 0;
-      console.log('Solde actuel:', currentBalance); // Log pour déboguer
-      
-      if (isApproved) {
-        const newBalance = notification.type === 'depot' 
-          ? currentBalance + notification.amount 
-          : currentBalance - notification.amount;
-
-        console.log('Nouveau solde:', newBalance); // Log pour déboguer
-
-        // Mettre à jour le solde de l'utilisateur
-        await updateDoc(userDoc.ref, {
-          porteFeuille: newBalance
-        });
-
-        // Ajouter l'historique de la transaction
-        await addDoc(collection(FIREBASE_DB, 'historiquedepot'), {
-          utilisateur: userDoc.ref,
-          valeur: notification.amount,
-          dateheure: serverTimestamp(),
-          is_depot: notification.type === 'depot'
-        });
-      }
-
-      // Mettre à jour le statut de la notification
-      await updateDoc(notificationRef, {
-        status: isApproved ? 'approved' : 'rejected',
-        processedAt: serverTimestamp()
-      });
-
-      // Rafraîchir les notifications
-      fetchNotifications();
-      
-      Alert.alert(
-        'Succès',
-        `La demande a été ${isApproved ? 'approuvée' : 'rejetée'} avec succès`
-      );
-    } catch (error) {
-      console.error('Erreur lors du traitement de la notification:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue lors du traitement de la demande');
     }
   };
 
@@ -152,6 +83,13 @@ const Admin = () => {
     }
   };
 
+  // Mapping des IDs aux noms des cryptos
+  const cryptoNames: { [key: string]: { name: string, symbol: string } } = {
+    '1': { name: 'Bitcoin', symbol: 'BTC' },
+    '2': { name: 'Ethereum', symbol: 'ETH' },
+    '3': { name: 'Cardano', symbol: 'ADA' }
+  };
+
   const fetchTransactions = async () => {
     try {
       const transactionsRef = collection(FIREBASE_DB, 'transactions');
@@ -159,24 +97,20 @@ const Admin = () => {
       
       const transactionsPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const data = docSnapshot.data();
+        const cryptoId = data.id_crypto.toString();
+        const cryptoInfo = cryptoNames[cryptoId] || { name: 'Crypto inconnue', symbol: '???' };
         
-        // Récupérer les détails de la crypto
-        const cryptoRef = firestoreDoc(FIREBASE_DB, 'cryptocurrencies', data.id_crypto);
-        const cryptoDoc = await getDoc(cryptoRef);
-        const cryptoData = cryptoDoc.data();
-
         return {
           id: docSnapshot.id,
           ...data,
           date_heure: data.date_heure.toDate(),
-          cryptoName: cryptoData?.name || 'Crypto inconnue',
-          cryptoSymbol: cryptoData?.symbol || '???',
+          cryptoName: cryptoInfo.name,
+          cryptoSymbol: cryptoInfo.symbol,
           userEmail: data.idUtilisateur
         } as Transaction;
       });
 
       const loadedTransactions = await Promise.all(transactionsPromises);
-      // Trier par date, plus récent en premier
       loadedTransactions.sort((a, b) => b.date_heure.getTime() - a.date_heure.getTime());
       setTransactions(loadedTransactions);
     } catch (error) {
@@ -184,41 +118,143 @@ const Admin = () => {
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-    fetchTransactions();
-    fetchNotifications();
-  }, []);
+  const fetchNotifications = async () => {
+    try {
+      // Requête simplifiée sans orderBy pour éviter le besoin d'un index composite
+      const notificationsQuery = query(
+        collection(FIREBASE_DB, 'notifications'),
+        where('status', '==', 'en_attente')
+      );
+
+      const notificationsSnapshot = await getDocs(notificationsQuery);
+      const notificationsData = notificationsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        date_creation: doc.data().date_creation?.toDate()
+      })) as Notification[];
+
+      // Tri côté client
+      notificationsData.sort((a, b) => {
+        if (!a.date_creation || !b.date_creation) return 0;
+        return b.date_creation.getTime() - a.date_creation.getTime();
+      });
+
+      setNotifications(notificationsData);
+    } catch (error) {
+      console.error('Erreur lors de la récupération des notifications:', error);
+      Alert.alert(
+        'Erreur',
+        'Impossible de récupérer les notifications. Veuillez réessayer.'
+      );
+    }
+  };
+
+  const handleValidateTransaction = async (notification: Notification, isApproved: boolean) => {
+    try {
+      // Mettre à jour la notification
+      const notificationRef = firestoreDoc(FIREBASE_DB, 'notifications', notification.id);
+      await updateDoc(notificationRef, {
+        status: isApproved ? 'validee' : 'refusee',
+        date_validation: serverTimestamp()
+      });
+
+      if (isApproved) {
+        // Trouver l'ID de l'utilisateur à partir de son email
+        const usersRef = collection(FIREBASE_DB, 'utilisateurs');
+        const q = query(usersRef, where('email', '==', notification.userEmail));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+          Alert.alert('Erreur', 'Utilisateur non trouvé');
+          return;
+        }
+
+        const userDoc = querySnapshot.docs[0];
+        const userData = userDoc.data();
+        const userRef = firestoreDoc(FIREBASE_DB, 'utilisateurs', userDoc.id);
+
+        // Convertir les montants en nombres
+        const currentBalance = Number(userData.porteFeuille || 0);
+        const montantOperation = Number(notification.montant);
+        const newBalance = notification.type === 'depot' 
+          ? currentBalance + montantOperation
+          : currentBalance - montantOperation;
+
+        console.log('Calcul du solde:', {
+          currentBalance,
+          montantOperation,
+          newBalance,
+          type: notification.type
+        });
+
+        if (notification.type === 'retrait' && newBalance < 0) {
+          Alert.alert('Erreur', 'Le solde de l\'utilisateur serait négatif après cette opération');
+          return;
+        }
+
+        // Mettre à jour le solde
+        await updateDoc(userRef, {
+          porteFeuille: newBalance
+        });
+
+        // Créer une transaction dans l'historique
+        await addDoc(collection(FIREBASE_DB, 'historiquedepot'), {
+          utilisateur: userDoc.id,
+          valeur: montantOperation,
+          dateheure: serverTimestamp(),
+          is_depot: notification.type === 'depot'
+        });
+
+        console.log('Mise à jour du solde réussie:', {
+          userId: userDoc.id,
+          oldBalance: currentBalance,
+          newBalance: newBalance,
+          amount: montantOperation,
+          type: notification.type
+        });
+      }
+
+      // Rafraîchir les données
+      fetchData();
+      Alert.alert(
+        'Succès',
+        `La demande a été ${isApproved ? 'validée' : 'refusée'} avec succès`
+      );
+    } catch (error) {
+      console.error('Erreur lors de la validation:', error);
+      Alert.alert('Erreur', 'Une erreur est survenue lors de la validation');
+    }
+  };
 
   const renderUser = ({ item }: { item: User }) => (
     <View style={styles.card}>
-      <View style={styles.cardInfo}>
+      <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{item.email}</Text>
-        <Text style={styles.cardSubtitle}>Role: {item.role || 'user'}</Text>
+        <Text style={[styles.badge, { backgroundColor: item.role === 'admin' ? '#3498db' : '#2ecc71' }]}>
+          {item.role || 'user'}
+        </Text>
       </View>
-      <Text style={styles.cardValue}>
-        Solde: ${item.porteFeuille?.toLocaleString() || '0'}
-      </Text>
+      <View style={styles.cardBody}>
+        <Text style={styles.balanceLabel}>Solde:</Text>
+        <Text style={styles.balanceValue}>${item.porteFeuille?.toLocaleString() || '0'}</Text>
+      </View>
     </View>
   );
 
   const renderTransaction = ({ item }: { item: Transaction }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={[
-          styles.transactionType,
-          { color: item.is_achat ? '#2ecc71' : '#e74c3c' }
-        ]}>
+        <Text style={[styles.transactionType, { color: item.is_achat ? '#2ecc71' : '#e74c3c' }]}>
           {item.is_achat ? 'ACHAT' : 'VENTE'}
         </Text>
         <Text style={styles.date}>
           {item.date_heure.toLocaleDateString()} {item.date_heure.toLocaleTimeString()}
         </Text>
       </View>
-      <View style={styles.cardInfo}>
+      <View style={styles.cardBody}>
         <View>
-          <Text style={styles.cardTitle}>{item.cryptoName}</Text>
-          <Text style={styles.cardSubtitle}>{item.cryptoSymbol}</Text>
+          <Text style={styles.cryptoName}>{item.cryptoName}</Text>
+          <Text style={styles.cryptoSymbol}>{item.cryptoSymbol}</Text>
         </View>
         <View style={styles.transactionDetails}>
           <Text style={styles.amount}>{item.valeur} {item.cryptoSymbol}</Text>
@@ -231,33 +267,42 @@ const Admin = () => {
   const renderNotification = ({ item }: { item: Notification }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={[
-          styles.transactionType,
-          { color: item.type === 'depot' ? '#2ecc71' : '#e74c3c' }
-        ]}>
-          {item.type === 'depot' ? 'DÉPÔT' : 'RETRAIT'}
-        </Text>
+        <View style={styles.typeContainer}>
+          <Ionicons 
+            name={item.type === 'depot' ? 'arrow-down-circle' : 'arrow-up-circle'} 
+            size={24} 
+            color={item.type === 'depot' ? '#2ecc71' : '#e74c3c'} 
+          />
+          <Text style={[styles.transactionType, { 
+            color: item.type === 'depot' ? '#2ecc71' : '#e74c3c',
+            marginLeft: 8
+          }]}>
+            {item.type.toUpperCase()}
+          </Text>
+        </View>
         <Text style={styles.date}>
-          {item.createdAt.toLocaleDateString()} {item.createdAt.toLocaleTimeString()}
+          {item.date_creation.toLocaleDateString()} {item.date_creation.toLocaleTimeString()}
         </Text>
       </View>
-      <View style={styles.cardInfo}>
+      <View style={styles.cardBody}>
         <View>
-          <Text style={styles.cardTitle}>{item.userEmail}</Text>
-          <Text style={styles.amount}>{item.amount} $</Text>
+          <Text style={styles.userEmail}>{item.userEmail}</Text>
+          <Text style={styles.amount}>Montant: ${item.montant}</Text>
         </View>
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.actionButton, styles.approveButton]}
-            onPress={() => handleNotificationAction(item, true)}
+            onPress={() => handleValidateTransaction(item, true)}
           >
-            <Text style={styles.actionButtonText}>Approuver</Text>
+            <Ionicons name="checkmark-circle-outline" size={20} color="white" />
+            <Text style={styles.actionButtonText}>Valider</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => handleNotificationAction(item, false)}
+            onPress={() => handleValidateTransaction(item, false)}
           >
-            <Text style={styles.actionButtonText}>Rejeter</Text>
+            <Ionicons name="close-circle-outline" size={20} color="white" />
+            <Text style={styles.actionButtonText}>Refuser</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -267,12 +312,9 @@ const Admin = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Administration</Text>
-        <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={handleLogout}
-        >
-          <Text style={styles.logoutButtonText}>Déconnexion</Text>
+        <Text style={styles.headerTitle}>Administration</Text>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
         </TouchableOpacity>
       </View>
 
@@ -281,6 +323,11 @@ const Admin = () => {
           style={[styles.tab, activeTab === 'notifications' && styles.activeTab]}
           onPress={() => setActiveTab('notifications')}
         >
+          <Ionicons 
+            name="notifications-outline" 
+            size={24} 
+            color={activeTab === 'notifications' ? '#2c3e50' : '#7f8c8d'}
+          />
           <Text style={[styles.tabText, activeTab === 'notifications' && styles.activeTabText]}>
             Notifications
           </Text>
@@ -289,6 +336,11 @@ const Admin = () => {
           style={[styles.tab, activeTab === 'users' && styles.activeTab]}
           onPress={() => setActiveTab('users')}
         >
+          <Ionicons 
+            name="people-outline" 
+            size={24} 
+            color={activeTab === 'users' ? '#2c3e50' : '#7f8c8d'}
+          />
           <Text style={[styles.tabText, activeTab === 'users' && styles.activeTabText]}>
             Utilisateurs
           </Text>
@@ -297,6 +349,11 @@ const Admin = () => {
           style={[styles.tab, activeTab === 'transactions' && styles.activeTab]}
           onPress={() => setActiveTab('transactions')}
         >
+          <Ionicons 
+            name="swap-horizontal-outline" 
+            size={24} 
+            color={activeTab === 'transactions' ? '#2c3e50' : '#7f8c8d'}
+          />
           <Text style={[styles.tabText, activeTab === 'transactions' && styles.activeTabText]}>
             Transactions
           </Text>
@@ -309,6 +366,11 @@ const Admin = () => {
           renderItem={renderNotification}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>Aucune notification en attente</Text>
+            </View>
+          }
         />
       ) : activeTab === 'users' ? (
         <FlatList
@@ -343,38 +405,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  title: {
+  headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: '#2c3e50',
   },
   logoutButton: {
-    backgroundColor: '#e74c3c',
-    padding: 10,
-    borderRadius: 8,
-  },
-  logoutButtonText: {
-    color: '#fff',
-    fontSize: 16,
+    padding: 8,
   },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: '#fff',
-    padding: 10,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
   tab: {
     flex: 1,
-    padding: 10,
     alignItems: 'center',
-    borderRadius: 8,
+    paddingVertical: 10,
   },
   activeTab: {
-    backgroundColor: '#f0f0f0',
+    borderBottomWidth: 2,
+    borderBottomColor: '#2c3e50',
   },
   tabText: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 12,
+    color: '#7f8c8d',
+    marginTop: 4,
   },
   activeTabText: {
     color: '#2c3e50',
@@ -388,11 +446,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 15,
     marginBottom: 10,
-    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+    elevation: 3,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -400,50 +458,80 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  cardInfo: {
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  cardBody: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  cardSubtitle: {
+  balanceLabel: {
     fontSize: 14,
     color: '#7f8c8d',
-    marginTop: 4,
   },
-  cardValue: {
-    fontSize: 16,
+  balanceValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#2ecc71',
-    fontWeight: '500',
+  },
+  typeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   transactionType: {
-    fontWeight: 'bold',
     fontSize: 16,
+    fontWeight: 'bold',
   },
   date: {
-    color: '#7f8c8d',
     fontSize: 14,
+    color: '#7f8c8d',
   },
-  amount: {
-    fontSize: 18,
+  cryptoName: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#2c3e50',
-    marginTop: 4,
+  },
+  cryptoSymbol: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    marginTop: 2,
+  },
+  transactionDetails: {
+    alignItems: 'flex-end',
+  },
+  amount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+  },
+  userEmail: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    marginBottom: 4,
   },
   actionButtons: {
-    flexDirection: 'column',
+    flexDirection: 'row',
     gap: 8,
   },
   actionButton: {
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
     minWidth: 100,
-    alignItems: 'center',
+    justifyContent: 'center',
   },
   approveButton: {
     backgroundColor: '#2ecc71',
@@ -453,7 +541,18 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: '#fff',
-    fontWeight: '600',
+    marginLeft: 4,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
   },
 });
 

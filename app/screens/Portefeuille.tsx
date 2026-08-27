@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { Ionicons } from '@expo/vector-icons';
 import { FIREBASE_DB, FIREBASE_AUTH } from '../../FirebaseConfig';
 import { collection, doc, getDoc, getDocs, query, where, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 interface CryptoWallet {
   id: string;
@@ -28,75 +29,80 @@ const Portefeuille = () => {
   const [montant, setMontant] = useState('');
   const [showHistoriqueModal, setShowHistoriqueModal] = useState(false);
   const [historiqueTransactions, setHistoriqueTransactions] = useState<Transaction[]>([]);
+  const { user } = useAuth();
+
+  // Mapping des IDs aux noms des cryptos
+  const cryptoNames: { [key: string]: string } = {
+    '1': 'Bitcoin',
+    '2': 'Ethereum',
+    '3': 'Cardano'
+  };
 
   useEffect(() => {
     const fetchUserData = async () => {
-      try {
-        const user = FIREBASE_AUTH.currentUser;
-        if (!user?.email) {
-          setError('Utilisateur non connecté');
-          return;
-        }
+      if (!user?.uid) {
+        setError('Utilisateur non connecté');
+        setLoading(false);
+        return;
+      }
 
-        // Récupérer les données de l'utilisateur
-        const userDoc = await getDoc(doc(FIREBASE_DB, 'utilisateurs', user.email));
+      try {
+        console.log('Récupération des données utilisateur pour:', user.uid);
+        
+        // 1. Récupérer les données de l'utilisateur
+        const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
+        const userDoc = await getDoc(userRef);
+        
         if (!userDoc.exists()) {
           setError('Utilisateur non trouvé');
+          setLoading(false);
           return;
         }
 
-        setSolde(userDoc.data().porteFeuille || 0);
+        const userData = userDoc.data();
+        console.log('Données utilisateur récupérées:', {
+          uid: user.uid,
+          solde: userData.porteFeuille
+        });
+        
+        setSolde(userData.porteFeuille || 0);
 
-        // Récupérer les cryptos de l'utilisateur
-        const fetchUserCryptos = async () => {
-          try {
-            const userRef = doc(FIREBASE_DB, 'utilisateurs', user.email);
-            
-            // Récupérer tous les wallets de l'utilisateur
-            const walletsQuery = query(
-              collection(FIREBASE_DB, 'cryptowallet'),
-              where('user', '==', userRef)
-            );
-            
-            const walletsSnapshot = await getDocs(walletsQuery);
-            const wallets: any[] = [];
-            const processedCryptos = new Set(); // Pour éviter les doublons
+        // 2. Créer des wallets vides pour toutes les cryptos
+        const emptyWallets = Object.entries(cryptoNames).map(([id, name]) => ({
+          id,
+          cryptoName: name,
+          valeur: 0
+        }));
 
-            for (const walletDoc of walletsSnapshot.docs) {
-              const walletData = walletDoc.data();
-              const cryptoRef = walletData.crypto;
-              
-              // Vérifier si nous avons déjà traité cette crypto
-              const cryptoId = cryptoRef.id;
-              if (processedCryptos.has(cryptoId)) continue;
-              processedCryptos.add(cryptoId);
-              
-              // Récupérer les détails de la crypto
-              const cryptoDoc = await getDoc(cryptoRef);
-              if (cryptoDoc.exists()) {
-                wallets.push({
-                  id: walletDoc.id,
-                  valeur: walletData.valeur,
-                  crypto: {
-                    id: cryptoDoc.id,
-                    ...cryptoDoc.data()
-                  }
-                });
-              }
-            }
-            
-            const cryptoWallets: CryptoWallet[] = wallets.map(wallet => ({
-              id: wallet.id,
-              cryptoName: wallet.crypto.name || wallet.crypto.nom || 'Unknown',
-              valeur: wallet.valeur
-            }));
-            setCryptoWallets(cryptoWallets);
-          } catch (error) {
-            console.error('Erreur lors de la récupération des cryptos:', error);
+        // 3. Récupérer les wallets de l'utilisateur
+        const walletsQuery = query(
+          collection(FIREBASE_DB, 'cryptoWallet'),
+          where('utilisateur', '==', user.email)
+        );
+
+        const walletsSnapshot = await getDocs(walletsQuery);
+        console.log('Wallets trouvés:', walletsSnapshot.docs.length);
+        
+        // 4. Mettre à jour les valeurs des wallets existants
+        const userWallets = new Map(emptyWallets.map(w => [w.id, w]));
+        
+        walletsSnapshot.docs.forEach(walletDoc => {
+          const walletData = walletDoc.data();
+          const cryptoId = walletData.crypto.toString();
+          console.log('Wallet trouvé:', { cryptoId, walletData });
+          
+          if (userWallets.has(cryptoId)) {
+            userWallets.set(cryptoId, {
+              id: walletDoc.id,
+              cryptoName: cryptoNames[cryptoId],
+              valeur: walletData.valeur || 0
+            });
           }
-        };
+        });
 
-        await fetchUserCryptos();
+        const finalWallets = Array.from(userWallets.values());
+        console.log('Wallets finaux:', finalWallets);
+        setCryptoWallets(finalWallets);
         setLoading(false);
       } catch (error) {
         console.error('Erreur lors de la récupération des données:', error);
@@ -106,55 +112,33 @@ const Portefeuille = () => {
     };
 
     fetchUserData();
-  }, []);
+  }, [user]);
 
   const getAllTransactions = async () => {
-    try {
-      const user = FIREBASE_AUTH.currentUser;
-      if (!user?.email) {
-        console.error('Pas d\'utilisateur connecté');
-        Alert.alert('Erreur', 'Utilisateur non connecté');
-        return;
-      }
+    if (!user?.uid) {
+      Alert.alert('Erreur', 'Utilisateur non connecté');
+      return;
+    }
 
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.email);
+    try {
+      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
       const transactionsQuery = query(
         collection(FIREBASE_DB, 'historiquedepot'),
         where('utilisateur', '==', userRef)
       );
 
       const transactionsSnapshot = await getDocs(transactionsQuery);
-      if (transactionsSnapshot.empty) {
-        setHistoriqueTransactions([]);
-        return;
-      }
-
-      const transactions: Transaction[] = [];
-
-      transactionsSnapshot.forEach(doc => {
+      const transactions = transactionsSnapshot.docs.map(doc => {
         const data = doc.data();
-        console.log('Transaction brute:', data);
-
-        // Déterminer la date de la transaction
-        let date = new Date();
-        if (data.dateheure?.seconds) {
-          date = new Date(data.dateheure.seconds * 1000);
-        } else if (data.date?.seconds) {
-          date = new Date(data.date.seconds * 1000);
-        }
-
-        // Déterminer le type et le montant
-        const isDepot = data.is_depot !== undefined ? data.is_depot : 
-                       data.type === 'depot';
-        const montant = data.valeur || data.montant || 0;
-
-        transactions.push({
+        const date = data.dateheure?.toDate() || data.date?.toDate() || new Date();
+        
+        return {
           id: doc.id,
-          valeur: montant,
-          is_depot: isDepot,
+          valeur: data.valeur || data.montant || 0,
+          is_depot: data.is_depot !== undefined ? data.is_depot : data.type === 'depot',
           dateStr: date.toLocaleDateString(),
           timeStr: date.toLocaleTimeString()
-        });
+        };
       });
 
       // Tri des transactions par date (plus récentes en premier)
@@ -165,68 +149,72 @@ const Portefeuille = () => {
       });
 
       setHistoriqueTransactions(transactions);
-
     } catch (error) {
       console.error('Erreur lors de la récupération des transactions:', error);
       Alert.alert(
         'Erreur',
-        'Impossible de récupérer l\'historique des transactions. Veuillez réessayer.'
+        'Impossible de récupérer l\'historique des transactions'
       );
     }
   };
 
-  const handleTransaction = async (isDepot: boolean) => {
+  const handleDemandeDepot = async () => {
     if (!montant || isNaN(Number(montant)) || Number(montant) <= 0) {
       Alert.alert('Erreur', 'Veuillez entrer un montant valide');
       return;
     }
 
-    const montantNum = Number(montant);
-    const user = FIREBASE_AUTH.currentUser;
-    if (!user?.email) {
-      Alert.alert('Erreur', 'Utilisateur non connecté');
+    try {
+      const montantNumber = Number(montant);
+      
+      // Créer une nouvelle notification de dépôt
+      await addDoc(collection(FIREBASE_DB, 'notifications'), {
+        type: 'depot',
+        montant: montantNumber,
+        utilisateur: user?.uid,
+        userEmail: user?.email,
+        status: 'en_attente',
+        date_creation: serverTimestamp()
+      });
+
+      setMontant('');
+      setShowDepotModal(false);
+      Alert.alert('Succès', 'Votre demande de dépôt a été envoyée avec succès');
+    } catch (error) {
+      console.error('Erreur lors de la demande de dépôt:', error);
+      Alert.alert('Erreur', 'Une erreur est survenue lors de la demande de dépôt');
+    }
+  };
+
+  const handleDemandeRetrait = async () => {
+    if (!montant || isNaN(Number(montant)) || Number(montant) <= 0) {
+      Alert.alert('Erreur', 'Veuillez entrer un montant valide');
+      return;
+    }
+
+    const montantNumber = Number(montant);
+    if (solde !== null && montantNumber > solde) {
+      Alert.alert('Erreur', 'Le montant demandé dépasse votre solde disponible');
       return;
     }
 
     try {
-      setLoading(true);
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.email);
-      const userDoc = await getDoc(userRef);
-      
-      if (!userDoc.exists()) {
-        throw new Error('Utilisateur non trouvé');
-      }
-
-      const currentSolde = userDoc.data().porteFeuille || 0;
-
-      if (!isDepot && currentSolde < montantNum) {
-        Alert.alert('Erreur', 'Solde insuffisant');
-        return;
-      }
-
-      // Créer une notification pour l'admin
-      const notificationsRef = collection(FIREBASE_DB, 'notifications');
-      await addDoc(notificationsRef, {
-        userEmail: user.email,
-        userName: user.displayName,
-        amount: montantNum,
-        type: isDepot ? 'depot' : 'retrait',
-        status: 'pending',
-        createdAt: serverTimestamp(),
+      // Créer une nouvelle notification de retrait
+      await addDoc(collection(FIREBASE_DB, 'notifications'), {
+        type: 'retrait',
+        montant: montantNumber,
+        utilisateur: user?.uid,
+        userEmail: user?.email,
+        status: 'en_attente',
+        date_creation: serverTimestamp()
       });
 
-      Alert.alert(
-        'Demande envoyée',
-        `${isDepot ? 'Dépôt' : 'Retrait'} effectué avec succès. Votre demande a été envoyée à l\'administrateur pour validation.`
-      );
       setMontant('');
-      setShowDepotModal(false);
       setShowRetraitModal(false);
+      Alert.alert('Succès', 'Votre demande de retrait a été envoyée avec succès');
     } catch (error) {
-      console.error('Erreur lors de la transaction:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue lors de la transaction');
-    } finally {
-      setLoading(false);
+      console.error('Erreur lors de la demande de retrait:', error);
+      Alert.alert('Erreur', 'Une erreur est survenue lors de la demande de retrait');
     }
   };
 
@@ -258,7 +246,7 @@ const Portefeuille = () => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalButton, styles.confirmButton]}
-              onPress={() => handleTransaction(isDepot)}
+              onPress={() => isDepot ? handleDemandeDepot() : handleDemandeRetrait()}
             >
               <Text style={styles.buttonText}>Confirmer</Text>
             </TouchableOpacity>
@@ -322,79 +310,74 @@ const Portefeuille = () => {
     </Modal>
   );
 
-  if (loading) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#0000ff" />
+  const renderWallet = ({ item }: { item: CryptoWallet }) => (
+    <View style={styles.walletCard}>
+      <View style={styles.walletHeader}>
+        <Text style={styles.cryptoName}>{item.cryptoName}</Text>
+        <Text style={styles.walletValue}>{item.valeur.toFixed(4)}</Text>
       </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>{error}</Text>
-      </View>
-    );
-  }
+    </View>
+  );
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Mon Portefeuille</Text>
-        <View style={styles.totalValue}>
-          <Text style={styles.totalValueLabel}>Solde Disponible</Text>
-          <Text style={styles.totalValueAmount}>${solde?.toLocaleString() || '0'}</Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0000ff" />
         </View>
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.transactionButton, styles.depositButton]}
-            onPress={() => setShowDepotModal(true)}
-          >
-            <Ionicons name="add-circle-outline" size={24} color="#fff" />
-            <Text style={styles.buttonText}>Dépôt</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.transactionButton, styles.withdrawButton]}
-            onPress={() => setShowRetraitModal(true)}
-          >
-            <Ionicons name="remove-circle-outline" size={24} color="#fff" />
-            <Text style={styles.buttonText}>Retrait</Text>
-          </TouchableOpacity>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
         </View>
-      </View>
+      ) : (
+        <ScrollView style={styles.scrollView}>
+          <View style={styles.balanceContainer}>
+            <Text style={styles.balanceLabel}>Solde disponible</Text>
+            <Text style={styles.balanceAmount}>${solde?.toLocaleString()}</Text>
+          </View>
 
-      <Text style={styles.sectionTitle}>Mes Cryptomonnaies</Text>
-      <ScrollView style={styles.assetList}>
-        {cryptoWallets.map((wallet) => (
-          <TouchableOpacity key={wallet.id} style={styles.assetCard}>
-            <View style={styles.assetInfo}>
-              <Text style={styles.assetName}>{wallet.cryptoName}</Text>
-            </View>
-            <View style={styles.assetValues}>
-              <View style={styles.valueContainer}>
-                <Text style={styles.assetLabel}>Quantité :</Text>
-                <Text style={styles.assetValue}>
-                  {wallet.valeur.toLocaleString()}
-                </Text>
+          <View style={styles.actionsContainer}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.depositButton]}
+              onPress={() => setShowDepotModal(true)}
+            >
+              <Ionicons name="add-circle-outline" size={24} color="white" />
+              <Text style={styles.actionButtonText}>Dépôt</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.withdrawButton]}
+              onPress={() => setShowRetraitModal(true)}
+            >
+              <Ionicons name="remove-circle-outline" size={24} color="white" />
+              <Text style={styles.actionButtonText}>Retrait</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.historyButton]}
+              onPress={() => {
+                getAllTransactions();
+                setShowHistoriqueModal(true);
+              }}
+            >
+              <Ionicons name="time-outline" size={24} color="white" />
+              <Text style={styles.actionButtonText}>Historique</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.cryptoContainer}>
+            <Text style={styles.sectionTitle}>Mes Cryptomonnaies</Text>
+            {cryptoWallets.map(wallet => (
+              <View key={wallet.id} style={styles.walletCard}>
+                <View style={styles.walletHeader}>
+                  <Text style={styles.cryptoName}>{wallet.cryptoName}</Text>
+                  <Text style={styles.walletValue}>{wallet.valeur.toFixed(4)}</Text>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity
-          style={styles.historiqueButton}
-          onPress={() => {
-            getAllTransactions();
-            setShowHistoriqueModal(true);
-          }}
-        >
-          <Ionicons name="time-outline" size={28} color="#fff" />
-          <Text style={styles.historiqueButtonText}>Historique des transactions</Text>
-        </TouchableOpacity>
-      </View>
+            ))}
+          </View>
+        </ScrollView>
+      )}
 
       {renderTransactionModal(true)}
       {renderTransactionModal(false)}
@@ -408,100 +391,58 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f6fa',
   },
-  centered: {
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    color: 'red',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  balanceContainer: {
     backgroundColor: '#fff',
     padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 10,
-  },
-  totalValue: {
-    marginTop: 10,
-  },
-  totalValueLabel: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginBottom: 5,
-  },
-  totalValueAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    margin: 20,
-  },
-  assetList: {
-    paddingHorizontal: 20,
-  },
-  assetCard: {
-    backgroundColor: '#fff',
-    padding: 15,
+    margin: 15,
     borderRadius: 10,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  assetInfo: {
-    flex: 1,
-  },
-  assetName: {
+  balanceLabel: {
     fontSize: 16,
+    color: '#666',
+  },
+  balanceAmount: {
+    fontSize: 32,
     fontWeight: 'bold',
     color: '#2c3e50',
+    marginTop: 5,
   },
-  assetValues: {
-    alignItems: 'flex-end',
-  },
-  valueContainer: {
+  actionsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'space-around',
+    padding: 15,
   },
-  assetLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginRight: 5,
-  },
-  assetValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2ecc71',
-  },
-  errorText: {
-    color: '#e74c3c',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 15,
-  },
-  transactionButton: {
+  actionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,
     borderRadius: 8,
-    flex: 1,
     marginHorizontal: 5,
   },
   depositButton: {
@@ -510,28 +451,55 @@ const styles = StyleSheet.create({
   withdrawButton: {
     backgroundColor: '#e74c3c',
   },
-  historiqueButton: {
-    backgroundColor: '#4a69bd',
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 18,
-    borderRadius: 12,
-    marginTop: 5,
+  historyButton: {
+    backgroundColor: '#3498db',
+  },
+  actionButtonText: {
+    color: '#fff',
+    marginLeft: 5,
+    fontWeight: '500',
+  },
+  cryptoContainer: {
+    backgroundColor: '#fff',
+    margin: 15,
+    padding: 15,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 3,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
-  historiqueButtonText: {
-    color: '#fff',
+  sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginLeft: 10,
+    marginBottom: 15,
+    color: '#2c3e50',
+  },
+  walletCard: {
+    backgroundColor: '#fff',
+    padding: 15,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    marginBottom: 10,
+  },
+  walletHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cryptoName: {
+    fontSize: 16,
+    color: '#2c3e50',
+  },
+  walletValue: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#2ecc71',
   },
   modalContainer: {
     flex: 1,
@@ -653,12 +621,11 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: 'center',
   },
-  bottomContainer: {
-    padding: 15,
-    paddingBottom: 25,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    backgroundColor: '#fff',
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 });
 

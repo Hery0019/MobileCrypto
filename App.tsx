@@ -13,6 +13,14 @@ import Transactions from './app/screens/Transactions';
 import Parametres from './app/screens/Parametres';
 import Admin from './app/screens/Admin';
 import Layout from './app/components/Layout';
+import { LogBox } from 'react-native';
+
+// Ignorer les avertissements non critiques
+LogBox.ignoreLogs([
+  'AsyncStorage has been extracted from react-native',
+  'Setting a timer for a long period of time',
+  '@firebase/auth'
+]);
 
 const Stack = createNativeStackNavigator();
 
@@ -38,6 +46,7 @@ const Navigation = () => {
           headerShown: false,
           contentStyle: { backgroundColor: '#FFFFFF' }
         }}
+        initialRouteName="Home"
       >
         {!user ? (
           // Routes non authentifiées
@@ -50,6 +59,10 @@ const Navigation = () => {
           // Routes admin
           <>
             <Stack.Screen name="Admin" component={Admin} />
+            <Stack.Screen name="Accueil" component={withLayout(Accueil)} />
+            <Stack.Screen name="Portefeuille" component={withLayout(Portefeuille)} />
+            <Stack.Screen name="Transactions" component={withLayout(Transactions)} />
+            <Stack.Screen name="Parametres" component={withLayout(Parametres)} />
           </>
         ) : (
           // Routes utilisateur normal

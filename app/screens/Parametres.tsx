@@ -3,12 +3,29 @@ import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } f
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 
 const Parametres = () => {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
+  const navigation = useNavigation();
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [biometrics, setBiometrics] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await FIREBASE_AUTH.signOut();
+      setUser(null);
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Home'
+        })
+      );
+    } catch (error) {
+      console.error('Erreur lors de la déconnexion:', error);
+      Alert.alert('Erreur', 'Impossible de se déconnecter');
+    }
+  };
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -70,6 +87,24 @@ const Parametres = () => {
           <Ionicons name="key-outline" size={24} color="#2c3e50" />
           <Text style={styles.buttonText}>Changer le mot de passe</Text>
         </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, styles.deleteButton]} 
+          onPress={handleLogout}
+        >
+          <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
+          <Text style={[styles.buttonText, styles.deleteButtonText]}>
+            Se déconnecter
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, styles.deleteButton]} 
+          onPress={handleDeleteAccount}
+        >
+          <Ionicons name="trash-outline" size={24} color="#e74c3c" />
+          <Text style={[styles.buttonText, styles.deleteButtonText]}>
+            Supprimer le compte
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
@@ -110,19 +145,6 @@ const Parametres = () => {
             trackColor={{ false: '#767577', true: '#2c3e50' }}
           />
         </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Sécurité</Text>
-        <TouchableOpacity 
-          style={[styles.button, styles.deleteButton]} 
-          onPress={handleDeleteAccount}
-        >
-          <Ionicons name="trash-outline" size={24} color="#e74c3c" />
-          <Text style={[styles.buttonText, styles.deleteButtonText]}>
-            Supprimer le compte
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
