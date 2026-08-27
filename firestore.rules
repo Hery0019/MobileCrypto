@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// Principe : le client LIT ses propres données ; toute écriture monétaire
+// (soldes, wallets, transactions, demandes, historique) passe par les
+// Cloud Functions (SDK Admin, non soumis à ces règles).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function ownsResource() {
+      return signedIn() && resource.data.utilisateur == request.auth.uid;
+    }
+
+    match /utilisateurs/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      // Création du profil à l'inscription : e-mail non encore vérifié à cet
+      // instant, d'où request.auth sans exigence email_verified. Le solde et
+      // le rôle sont imposés.
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'user'
+        && request.resource.data.porteFeuille == 0
+        && request.resource.data.keys().hasOnly(
+             ['email', 'nom', 'prenom', 'contact', 'photoURL', 'role', 'porteFeuille', 'date_creation']);
+      // Modification : uniquement les champs de présentation.
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['nom', 'prenom', 'contact', 'photoURL']);
+      allow delete: if false;
+    }
+
+    match /cryptocurrencies/{cryptoId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /wallets/{walletId} {
+      allow read: if ownsResource() || isAdmin();
+      allow write: if false;
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if ownsResource() || isAdmin();
+      allow write: if false;
+    }
+
+    // Demandes de dépôt/retrait (nom historique de la collection).
+    match /notifications/{requestId} {
+      allow read: if ownsResource() || isAdmin();
+      allow write: if false;
+    }
+
+    match /historiquedepot/{entryId} {
+      allow read: if ownsResource() || isAdmin();
+      allow write: if false;
+    }
+
+    // Anciennes collections (avant migration) : inaccessibles.
+    match /cryptoWallet/{id} { allow read, write: if false; }
+    match /cryptowallet/{id} { allow read, write: if false; }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

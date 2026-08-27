@@ -1,0 +1,37 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "utilisateur", "order": "ASCENDING" },
+        { "fieldPath": "date_heure", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "date_creation", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "utilisateur", "order": "ASCENDING" },
+        { "fieldPath": "date_creation", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "historiquedepot",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "utilisateur", "order": "ASCENDING" },
+        { "fieldPath": "dateheure", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
