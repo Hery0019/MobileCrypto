@@ -39,7 +39,7 @@ const loadProfile = async (firebaseUser: FirebaseUser): Promise<User> => {
     email,
     role: data?.role === 'admin' ? 'admin' : 'user',
     displayName: data?.nom || email,
-    photoURL: data?.photo || null,
+    photoURL: data?.photoURL || data?.photo || null,
   };
 };
 

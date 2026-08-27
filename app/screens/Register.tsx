@@ -78,7 +78,7 @@ const Register = ({ navigation }: { navigation: any }) => {
         prenom,
         contact,
         email,
-        photo: '',
+        photoURL: null,
         role: 'user',
         porteFeuille: 0,
       });
