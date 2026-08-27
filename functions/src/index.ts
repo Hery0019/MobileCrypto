@@ -6,3 +6,4 @@
 import './admin';
 
 export { REGION } from './admin';
+export { placeOrder } from './orders';
