@@ -9,3 +9,4 @@ export { REGION } from './admin';
 export { placeOrder } from './orders';
 export { requestCashMovement, reviewCashMovement } from './cashMovements';
 export { updatePrices } from './prices';
+export { onUserDeleted } from './users';
