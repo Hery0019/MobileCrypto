@@ -13,15 +13,20 @@ import Transactions from './app/screens/Transactions';
 import Parametres from './app/screens/Parametres';
 import Admin from './app/screens/Admin';
 import Layout from './app/components/Layout';
+import { RootStackParamList } from './app/navigation/types';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // Wrapper pour les écrans authentifiés
-const withLayout = (Component) => (props) => (
-  <Layout>
-    <Component {...props} />
-  </Layout>
-);
+const withLayout = <P extends object>(Component: React.ComponentType<P>) => {
+  const WithLayout = (props: P) => (
+    <Layout>
+      <Component {...props} />
+    </Layout>
+  );
+  WithLayout.displayName = `WithLayout(${Component.displayName ?? Component.name ?? 'Screen'})`;
+  return WithLayout;
+};
 
 const Navigation = () => {
   const { user, initializing } = useAuth();

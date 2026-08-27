@@ -5,6 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Avatar from './Avatar';
+import { RootStackParamList } from '../navigation/types';
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 interface VerticalMenuProps {
   onCloseMenu?: () => void;
@@ -16,7 +19,7 @@ const VerticalMenu = ({ onCloseMenu }: VerticalMenuProps) => {
   const screenWidth = Dimensions.get('window').width;
   const isLargeScreen = screenWidth > 768;
 
-  const menuItems = [
+  const menuItems: { title: string; screen: keyof RootStackParamList; icon: IconName }[] = [
     { title: 'Accueil', screen: 'Accueil', icon: 'home' },
     { title: 'Portefeuille', screen: 'Portefeuille', icon: 'wallet' },
     { title: 'Transactions', screen: 'Transactions', icon: 'swap-horizontal' },
@@ -33,7 +36,7 @@ const VerticalMenu = ({ onCloseMenu }: VerticalMenuProps) => {
     }
   };
 
-  const handleNavigation = (screen: string) => {
+  const handleNavigation = (screen: keyof RootStackParamList) => {
     navigation.navigate(screen);
     if (!isLargeScreen && onCloseMenu) {
       onCloseMenu();

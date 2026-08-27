@@ -1,5 +1,9 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getReactNativePersistence, initializeAuth } from 'firebase/auth';
+import { initializeAuth } from 'firebase/auth';
+// Les types du SDK pointent sur le build web, où cet export n'existe pas ;
+// il est bien présent dans le build React Native chargé par Metro.
+// @ts-expect-error getReactNativePersistence absent des déclarations web
+import { getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
