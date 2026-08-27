@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, ActivityIndicator } from 'react-native';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
@@ -8,9 +9,6 @@ import { authErrorMessage } from '../utils/authErrors';
 
 const Parametres = () => {
   const { user, signOut } = useAuth();
-  const [notifications, setNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  const [biometrics, setBiometrics] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -121,48 +119,8 @@ const Parametres = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Préférences</Text>
-        
-        <View style={styles.settingItem}>
-          <View style={styles.settingLabel}>
-            <Ionicons name="notifications-outline" size={24} color="#2c3e50" />
-            <Text style={styles.settingText}>Notifications</Text>
-          </View>
-          <Switch
-            value={notifications}
-            onValueChange={setNotifications}
-            trackColor={{ false: '#767577', true: '#2c3e50' }}
-          />
-        </View>
-
-        <View style={styles.settingItem}>
-          <View style={styles.settingLabel}>
-            <Ionicons name="moon-outline" size={24} color="#2c3e50" />
-            <Text style={styles.settingText}>Mode sombre</Text>
-          </View>
-          <Switch
-            value={darkMode}
-            onValueChange={setDarkMode}
-            trackColor={{ false: '#767577', true: '#2c3e50' }}
-          />
-        </View>
-
-        <View style={styles.settingItem}>
-          <View style={styles.settingLabel}>
-            <Ionicons name="finger-print-outline" size={24} color="#2c3e50" />
-            <Text style={styles.settingText}>Authentification biométrique</Text>
-          </View>
-          <Switch
-            value={biometrics}
-            onValueChange={setBiometrics}
-            trackColor={{ false: '#767577', true: '#2c3e50' }}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
         <Text style={styles.sectionTitle}>À propos</Text>
-        <Text style={styles.version}>Version 1.0.0</Text>
+        <Text style={styles.version}>Version {Constants.expoConfig?.version ?? '—'}</Text>
       </View>
 
       <Modal visible={showDeleteModal} transparent animationType="fade" onRequestClose={() => setShowDeleteModal(false)}>
