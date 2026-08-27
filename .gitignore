@@ -34,3 +34,10 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# keystores (jamais versionner une clé de signature release)
+*.keystore
+!android/app/debug.keystore
+
+# IDE
+.idea/
