@@ -1,6 +1,9 @@
 import React from 'react';
 import { View, TouchableOpacity, Image, Text, StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+
+const AVATAR_SIZE = 256;
 import { FIREBASE_STORAGE } from '../../FirebaseConfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../context/AuthContext';
@@ -59,11 +62,19 @@ const Avatar = () => {
 
   const uploadImage = async (uri: string) => {
     try {
-      const response = await fetch(uri);
+      // Recadrage à 256 px et compression JPEG avant envoi : un avatar pèse
+      // quelques dizaines de Ko au lieu de plusieurs Mo (photo 12 Mpx),
+      // et reste sous la limite des règles Storage (5 Mo).
+      const resized = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: AVATAR_SIZE, height: AVATAR_SIZE } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      const response = await fetch(resized.uri);
       const blob = await response.blob();
-      
+
       const storageRef = ref(FIREBASE_STORAGE, `avatars/${user?.uid}`);
-      await uploadBytes(storageRef, blob);
+      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
       
       const downloadURL = await getDownloadURL(storageRef);
       
