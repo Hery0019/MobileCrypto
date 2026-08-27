@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
+import { FIREBASE_AUTH } from '../../FirebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 
 const Login = () => {
@@ -12,7 +10,6 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { setUser } = useAuth();
 
   const signIn = async () => {
     if (!email || !password) {
@@ -22,43 +19,17 @@ const Login = () => {
 
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(FIREBASE_AUTH, email, password);
-      const user = userCredential.user;
-
-      // Récupérer les données de l'utilisateur depuis Firestore
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
-      const userDoc = await getDoc(userRef);
-
-      if (!userDoc.exists()) {
-        // Si le document n'existe pas, créer un utilisateur par défaut
-        const userInfo = {
-          uid: user.uid,
-          email: user.email,
-          role: 'user', // Role par défaut
-          displayName: user.email,
-          photoURL: null
-        };
-        setUser(userInfo);
-      } else {
-        const userData = userDoc.data();
-        const userInfo = {
-          uid: user.uid,
-          email: user.email,
-          role: userData.role || 'user', // Utiliser 'user' comme rôle par défaut si non défini
-          displayName: userData.nom || user.email,
-          photoURL: userData.photo || null
-        };
-        setUser(userInfo);
-      }
-      // La navigation sera gérée automatiquement par le composant Navigation
+      await signInWithEmailAndPassword(FIREBASE_AUTH, email.trim(), password);
+      // Le profil est chargé par AuthProvider (onAuthStateChanged) et la
+      // navigation bascule automatiquement ; cet écran est alors démonté.
     } catch (error) {
       console.error('Erreur de connexion:', error);
       Alert.alert(
         'Erreur de connexion',
         'Veuillez vérifier votre email et mot de passe'
       );
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

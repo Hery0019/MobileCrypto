@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
-import { FIREBASE_AUTH, FIREBASE_DB } from '../../FirebaseConfig';
+import { FIREBASE_DB } from '../../FirebaseConfig';
 import { collection, getDocs, getDoc, doc as firestoreDoc, updateDoc, addDoc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface User {
@@ -41,8 +40,7 @@ const Admin = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'notifications'>('notifications');
-  const { setUser } = useAuth();
-  const navigation = useNavigation();
+  const { signOut } = useAuth();
 
   useEffect(() => {
     fetchData();
@@ -56,14 +54,10 @@ const Admin = () => {
 
   const handleLogout = async () => {
     try {
-      await FIREBASE_AUTH.signOut();
-      setUser(null);
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
+      await signOut();
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
+      Alert.alert('Erreur', 'Impossible de se déconnecter');
     }
   };
 

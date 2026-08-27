@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthProvider, useAuth } from './app/context/AuthContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar } from 'react-native';
+import { ActivityIndicator, StatusBar, View } from 'react-native';
 import Home from './app/screens/Home';
 import Login from './app/screens/Login';
 import Register from './app/screens/Register';
@@ -24,7 +24,15 @@ const withLayout = (Component) => (props) => (
 );
 
 const Navigation = () => {
-  const { user } = useAuth();
+  const { user, initializing } = useAuth();
+
+  if (initializing) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+        <ActivityIndicator size="large" color="#2c3e50" />
+      </View>
+    );
+  }
 
   return (
     <>

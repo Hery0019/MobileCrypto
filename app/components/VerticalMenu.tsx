@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { FIREBASE_AUTH } from '../../FirebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,7 +12,7 @@ interface VerticalMenuProps {
 
 const VerticalMenu = ({ onCloseMenu }: VerticalMenuProps) => {
   const navigation = useNavigation();
-  const { setUser } = useAuth();
+  const { signOut } = useAuth();
   const screenWidth = Dimensions.get('window').width;
   const isLargeScreen = screenWidth > 768;
 
@@ -26,10 +25,8 @@ const VerticalMenu = ({ onCloseMenu }: VerticalMenuProps) => {
 
   const handleSignOut = async () => {
     try {
-      await FIREBASE_AUTH.signOut();
-      setUser(null);
+      await signOut();
       if (onCloseMenu) onCloseMenu();
-      // L'utilisateur sera automatiquement redirigé vers l'écran non authentifié
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
       Alert.alert('Erreur', 'Impossible de se déconnecter');

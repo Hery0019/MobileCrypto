@@ -3,24 +3,16 @@ import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } f
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
-import { CommonActions, useNavigation } from '@react-navigation/native';
 
 const Parametres = () => {
-  const { user, setUser } = useAuth();
-  const navigation = useNavigation();
+  const { user, signOut } = useAuth();
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [biometrics, setBiometrics] = useState(false);
 
   const handleLogout = async () => {
     try {
-      await FIREBASE_AUTH.signOut();
-      setUser(null);
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: 'Home'
-        })
-      );
+      await signOut();
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
       Alert.alert('Erreur', 'Impossible de se déconnecter');
