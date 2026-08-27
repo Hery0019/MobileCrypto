@@ -13,14 +13,6 @@ import Transactions from './app/screens/Transactions';
 import Parametres from './app/screens/Parametres';
 import Admin from './app/screens/Admin';
 import Layout from './app/components/Layout';
-import { LogBox } from 'react-native';
-
-// Ignorer les avertissements non critiques
-LogBox.ignoreLogs([
-  'AsyncStorage has been extracted from react-native',
-  'Setting a timer for a long period of time',
-  '@firebase/auth'
-]);
 
 const Stack = createNativeStackNavigator();
 
