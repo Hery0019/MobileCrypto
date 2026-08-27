@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { initializeAuth } from 'firebase/auth';
 // Les types du SDK pointent sur le build web, où cet export n'existe pas ;
@@ -9,19 +10,27 @@ import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Configuration publique du projet Firebase (identifie le projet ; la
-// sécurité repose sur les règles et les Cloud Functions, pas sur ces valeurs).
-const firebaseConfig = {
-  apiKey: 'AIzaSyBMsNTkUZEEHLZUvU5UChIDoZSgw0Thf-E',
-  authDomain: 'crypto-3e7df.firebaseapp.com',
-  projectId: 'crypto-3e7df',
-  storageBucket: 'crypto-3e7df.appspot.com',
-  messagingSenderId: '459564815290',
-  appId: '1:459564815290:web:dd597f2ab2da0e792f4383',
-};
+interface FirebaseExtra {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+  functionsRegion: string;
+}
+
+// Injectée par app.config.ts depuis les variables EXPO_PUBLIC_FIREBASE_*
+// (voir .env.example) : un projet Firebase par environnement.
+const firebaseExtra = Constants.expoConfig?.extra?.firebase as FirebaseExtra | undefined;
+if (!firebaseExtra) {
+  throw new Error('Configuration Firebase absente : définir les variables EXPO_PUBLIC_FIREBASE_* (voir .env.example)');
+}
+
+const { functionsRegion, ...firebaseConfig } = firebaseExtra;
 
 /** Doit correspondre à functions/src/admin.ts (REGION). */
-export const FUNCTIONS_REGION = 'europe-west1';
+export const FUNCTIONS_REGION = functionsRegion;
 
 const FIREBASE_APP = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 

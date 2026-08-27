@@ -41,3 +41,6 @@ yarn-error.*
 
 # IDE
 .idea/
+
+# variables d environnement locales (voir .env.example)
+.env
