@@ -121,10 +121,11 @@ const Portefeuille = () => {
     }
 
     try {
-      const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
+      // Admin écrit 'utilisateur' comme uid (string) : comparer avec le même type,
+      // une DocumentReference ne matcherait jamais.
       const transactionsQuery = query(
         collection(FIREBASE_DB, 'historiquedepot'),
-        where('utilisateur', '==', userRef)
+        where('utilisateur', '==', user.uid)
       );
 
       const transactionsSnapshot = await getDocs(transactionsQuery);
