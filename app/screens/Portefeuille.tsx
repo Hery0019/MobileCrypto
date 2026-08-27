@@ -1,377 +1,157 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { FIREBASE_DB, FIREBASE_AUTH } from '../../FirebaseConfig';
-import { collection, doc, getDoc, getDocs, query, where, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { fetchUserCashHistory, subscribeCryptos, subscribeUserCashRequests, subscribeWallets } from '../services/firestore';
+import { functionsErrorMessage, requestCashMovement } from '../services/functions';
+import { CashHistoryEntry, CashMovementType, CashRequest, Crypto, Wallet } from '../services/model';
 
-interface CryptoWallet {
-  id: string;
-  cryptoName: string;
-  valeur: number;
-}
+const HISTORY_LIMIT = 50;
+const REQUESTS_LIMIT = 20;
 
-interface Transaction {
-  id: string;
-  valeur: number;
-  is_depot: boolean;
-  timestamp: number;
-  dateStr: string;
-  timeStr: string;
-}
+const formatMoney = (value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const formatDateTime = (date: Date | null) => (date ? `${date.toLocaleDateString()} ${date.toLocaleTimeString()}` : '—');
+
+const STATUS_LABEL: Record<CashRequest['status'], string> = {
+  en_attente: 'En attente',
+  validee: 'Validée',
+  refusee: 'Refusée',
+};
 
 const Portefeuille = () => {
-  const [solde, setSolde] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [cryptoWallets, setCryptoWallets] = useState<CryptoWallet[]>([]);
-  const [showDepotModal, setShowDepotModal] = useState(false);
-  const [showRetraitModal, setShowRetraitModal] = useState(false);
-  const [montant, setMontant] = useState('');
-  const [showHistoriqueModal, setShowHistoriqueModal] = useState(false);
-  const [historiqueTransactions, setHistoriqueTransactions] = useState<Transaction[]>([]);
   const { user } = useAuth();
+  const [cryptos, setCryptos] = useState<Crypto[]>([]);
+  const [wallets, setWallets] = useState<Record<string, Wallet>>({});
+  const [requests, setRequests] = useState<CashRequest[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Mapping des IDs aux noms des cryptos
-  const cryptoNames: { [key: string]: string } = {
-    '1': 'Bitcoin',
-    '2': 'Ethereum',
-    '3': 'Cardano'
-  };
+  const [movementType, setMovementType] = useState<CashMovementType | null>(null);
+  const [montant, setMontant] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<CashHistoryEntry[] | null>(null);
+
+  const uid = user?.uid;
+  const solde = user?.porteFeuille ?? 0;
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      if (!user?.uid) {
-        setError('Utilisateur non connecté');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        console.log('Récupération des données utilisateur pour:', user.uid);
-        
-        // 1. Récupérer les données de l'utilisateur
-        const userRef = doc(FIREBASE_DB, 'utilisateurs', user.uid);
-        const userDoc = await getDoc(userRef);
-        
-        if (!userDoc.exists()) {
-          setError('Utilisateur non trouvé');
-          setLoading(false);
-          return;
-        }
-
-        const userData = userDoc.data();
-        console.log('Données utilisateur récupérées:', {
-          uid: user.uid,
-          solde: userData.porteFeuille
-        });
-        
-        setSolde(userData.porteFeuille || 0);
-
-        // 2. Créer des wallets vides pour toutes les cryptos
-        const emptyWallets = Object.entries(cryptoNames).map(([id, name]) => ({
-          id,
-          cryptoName: name,
-          valeur: 0
-        }));
-
-        // 3. Récupérer les wallets de l'utilisateur
-        const walletsQuery = query(
-          collection(FIREBASE_DB, 'cryptoWallet'),
-          where('utilisateur', '==', user.email)
-        );
-
-        const walletsSnapshot = await getDocs(walletsQuery);
-        console.log('Wallets trouvés:', walletsSnapshot.docs.length);
-        
-        // 4. Mettre à jour les valeurs des wallets existants
-        const userWallets = new Map(emptyWallets.map(w => [w.id, w]));
-        
-        walletsSnapshot.docs.forEach(walletDoc => {
-          const walletData = walletDoc.data();
-          const cryptoId = walletData.crypto.toString();
-          console.log('Wallet trouvé:', { cryptoId, walletData });
-          
-          if (userWallets.has(cryptoId)) {
-            userWallets.set(cryptoId, {
-              id: walletDoc.id,
-              cryptoName: cryptoNames[cryptoId],
-              valeur: walletData.valeur || 0
-            });
-          }
-        });
-
-        const finalWallets = Array.from(userWallets.values());
-        console.log('Wallets finaux:', finalWallets);
-        setCryptoWallets(finalWallets);
-        setLoading(false);
-      } catch (error) {
-        console.error('Erreur lors de la récupération des données:', error);
-        setError('Erreur lors de la récupération des données');
-        setLoading(false);
-      }
+    if (!uid) {
+      return undefined;
+    }
+    const onError = (error: Error) => {
+      console.error('Chargement du portefeuille impossible:', error);
+      setLoadError('Impossible de charger le portefeuille. Vérifiez votre connexion.');
     };
+    const unsubscribes = [
+      subscribeCryptos(setCryptos, onError),
+      subscribeWallets(uid, setWallets, onError),
+      subscribeUserCashRequests(uid, REQUESTS_LIMIT, setRequests, onError),
+    ];
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [uid]);
 
-    fetchUserData();
-  }, [user]);
+  // Un wallet par crypto du référentiel, à 0 si l'utilisateur n'en a pas.
+  const holdings = useMemo(
+    () => cryptos.map((crypto) => ({ crypto, valeur: wallets[crypto.id]?.valeur ?? 0 })),
+    [cryptos, wallets]
+  );
+  const pendingRequests = requests.filter((r) => r.status === 'en_attente');
 
-  const getAllTransactions = async () => {
-    if (!user?.uid) {
-      Alert.alert('Erreur', 'Utilisateur non connecté');
+  const submitMovement = async () => {
+    if (!movementType || submitting) {
       return;
     }
-
-    try {
-      // Admin écrit 'utilisateur' comme uid (string) : comparer avec le même type,
-      // une DocumentReference ne matcherait jamais.
-      const transactionsQuery = query(
-        collection(FIREBASE_DB, 'historiquedepot'),
-        where('utilisateur', '==', user.uid)
-      );
-
-      const transactionsSnapshot = await getDocs(transactionsQuery);
-      const transactions = transactionsSnapshot.docs.map(doc => {
-        const data = doc.data();
-        const date = data.dateheure?.toDate() || data.date?.toDate() || new Date();
-        
-        return {
-          id: doc.id,
-          valeur: data.valeur || data.montant || 0,
-          is_depot: data.is_depot !== undefined ? data.is_depot : data.type === 'depot',
-          timestamp: date.getTime(),
-          dateStr: date.toLocaleDateString(),
-          timeStr: date.toLocaleTimeString()
-        };
-      });
-
-      // Plus récentes en premier. Trier sur la date d'origine : une chaîne
-      // localisée ('27/08/2026') n'est pas parsable par new Date().
-      transactions.sort((a, b) => b.timestamp - a.timestamp);
-
-      setHistoriqueTransactions(transactions);
-    } catch (error) {
-      console.error('Erreur lors de la récupération des transactions:', error);
-      Alert.alert(
-        'Erreur',
-        'Impossible de récupérer l\'historique des transactions'
-      );
-    }
-  };
-
-  const handleDemandeDepot = async () => {
-    if (!montant || isNaN(Number(montant)) || Number(montant) <= 0) {
+    const value = Number(montant.replace(',', '.'));
+    if (!Number.isFinite(value) || value <= 0) {
       Alert.alert('Erreur', 'Veuillez entrer un montant valide');
       return;
     }
-
-    try {
-      const montantNumber = Number(montant);
-      
-      // Créer une nouvelle notification de dépôt
-      await addDoc(collection(FIREBASE_DB, 'notifications'), {
-        type: 'depot',
-        montant: montantNumber,
-        utilisateur: user?.uid,
-        userEmail: user?.email,
-        status: 'en_attente',
-        date_creation: serverTimestamp()
-      });
-
-      setMontant('');
-      setShowDepotModal(false);
-      Alert.alert('Succès', 'Votre demande de dépôt a été envoyée avec succès');
-    } catch (error) {
-      console.error('Erreur lors de la demande de dépôt:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue lors de la demande de dépôt');
-    }
-  };
-
-  const handleDemandeRetrait = async () => {
-    if (!montant || isNaN(Number(montant)) || Number(montant) <= 0) {
-      Alert.alert('Erreur', 'Veuillez entrer un montant valide');
-      return;
-    }
-
-    const montantNumber = Number(montant);
-    if (solde !== null && montantNumber > solde) {
+    if (movementType === 'retrait' && value > solde) {
       Alert.alert('Erreur', 'Le montant demandé dépasse votre solde disponible');
       return;
     }
-
+    setSubmitting(true);
     try {
-      // Créer une nouvelle notification de retrait
-      await addDoc(collection(FIREBASE_DB, 'notifications'), {
-        type: 'retrait',
-        montant: montantNumber,
-        utilisateur: user?.uid,
-        userEmail: user?.email,
-        status: 'en_attente',
-        date_creation: serverTimestamp()
-      });
-
+      await requestCashMovement({ type: movementType, montant: value });
+      setMovementType(null);
       setMontant('');
-      setShowRetraitModal(false);
-      Alert.alert('Succès', 'Votre demande de retrait a été envoyée avec succès');
+      Alert.alert('Demande envoyée', `Votre demande de ${movementType} sera traitée par un administrateur.`);
     } catch (error) {
-      console.error('Erreur lors de la demande de retrait:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue lors de la demande de retrait');
+      console.error('Demande refusée:', error);
+      Alert.alert('Demande refusée', functionsErrorMessage(error, 'Une erreur est survenue. Réessayez.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const renderTransactionModal = (isDepot: boolean) => (
-    <Modal
-      visible={isDepot ? showDepotModal : showRetraitModal}
-      transparent={true}
-      animationType="slide"
-    >
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>{isDepot ? 'Dépôt' : 'Retrait'}</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Montant"
-            keyboardType="numeric"
-            value={montant}
-            onChangeText={setMontant}
-          />
-          <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={() => {
-                setMontant('');
-                isDepot ? setShowDepotModal(false) : setShowRetraitModal(false);
-              }}
-            >
-              <Text style={styles.buttonText}>Annuler</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.confirmButton]}
-              onPress={() => isDepot ? handleDemandeDepot() : handleDemandeRetrait()}
-            >
-              <Text style={styles.buttonText}>Confirmer</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  const renderHistoriqueModal = () => (
-    <Modal
-      visible={showHistoriqueModal}
-      transparent={true}
-      animationType="slide"
-    >
-      <View style={styles.modalContainer}>
-        <View style={[styles.modalContent, styles.historiqueContent]}>
-          <Text style={styles.modalTitle}>Historique des transactions</Text>
-          {historiqueTransactions.length === 0 ? (
-            <View style={styles.emptyStateContainer}>
-              <Ionicons name="document-text-outline" size={50} color="#95a5a6" />
-              <Text style={styles.emptyStateText}>Aucune transaction trouvée</Text>
-            </View>
-          ) : (
-            <ScrollView style={styles.historiqueList}>
-              {historiqueTransactions.map((transaction) => (
-                <View key={transaction.id} style={styles.historiqueItem}>
-                  <View style={styles.transactionInfo}>
-                    <Text style={[
-                      styles.historiqueMontant,
-                      transaction.is_depot ? styles.depotText : styles.retraitText
-                    ]}>
-                      {transaction.is_depot ? '+ ' : '- '}
-                      ${transaction.valeur.toLocaleString()}
-                    </Text>
-                    <Text style={[
-                      styles.historiqueType,
-                      transaction.is_depot ? styles.depotTypeText : styles.retraitTypeText
-                    ]}>
-                      {transaction.is_depot ? '⬆️ Dépôt' : '⬇️ Retrait'}
-                    </Text>
-                  </View>
-                  <Text style={styles.historiqueDate}>
-                    📅 {transaction.dateStr}
-                    {'\n'}
-                    🕒 {transaction.timeStr}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-          <TouchableOpacity
-            style={styles.fermerButton}
-            onPress={() => setShowHistoriqueModal(false)}
-          >
-            <Ionicons name="close-circle-outline" size={24} color="#fff" />
-            <Text style={styles.fermerButtonText}>Fermer</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  const renderWallet = ({ item }: { item: CryptoWallet }) => (
-    <View style={styles.walletCard}>
-      <View style={styles.walletHeader}>
-        <Text style={styles.cryptoName}>{item.cryptoName}</Text>
-        <Text style={styles.walletValue}>{item.valeur.toFixed(4)}</Text>
-      </View>
-    </View>
-  );
+  const openHistory = async () => {
+    if (!uid) {
+      return;
+    }
+    setShowHistory(true);
+    setHistory(null);
+    try {
+      setHistory(await fetchUserCashHistory(uid, HISTORY_LIMIT));
+    } catch (error) {
+      console.error("Chargement de l'historique impossible:", error);
+      setShowHistory(false);
+      Alert.alert('Erreur', "Impossible de récupérer l'historique des mouvements");
+    }
+  };
 
   return (
     <View style={styles.container}>
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#0000ff" />
-        </View>
-      ) : error ? (
+      {loadError ? (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{loadError}</Text>
         </View>
       ) : (
         <ScrollView style={styles.scrollView}>
-          <View style={styles.balanceContainer}>
+          <View style={styles.card}>
             <Text style={styles.balanceLabel}>Solde disponible</Text>
-            <Text style={styles.balanceAmount}>${solde?.toLocaleString()}</Text>
+            <Text style={styles.balanceAmount}>{formatMoney(solde)}</Text>
           </View>
 
           <View style={styles.actionsContainer}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.depositButton]}
-              onPress={() => setShowDepotModal(true)}
-            >
+            <TouchableOpacity style={[styles.actionButton, styles.depositButton]} onPress={() => setMovementType('depot')}>
               <Ionicons name="add-circle-outline" size={24} color="white" />
               <Text style={styles.actionButtonText}>Dépôt</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.withdrawButton]}
-              onPress={() => setShowRetraitModal(true)}
-            >
+            <TouchableOpacity style={[styles.actionButton, styles.withdrawButton]} onPress={() => setMovementType('retrait')}>
               <Ionicons name="remove-circle-outline" size={24} color="white" />
               <Text style={styles.actionButtonText}>Retrait</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.historyButton]}
-              onPress={() => {
-                getAllTransactions();
-                setShowHistoriqueModal(true);
-              }}
-            >
+            <TouchableOpacity style={[styles.actionButton, styles.historyButton]} onPress={openHistory}>
               <Ionicons name="time-outline" size={24} color="white" />
               <Text style={styles.actionButtonText}>Historique</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.cryptoContainer}>
+          {pendingRequests.length > 0 && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Demandes en attente</Text>
+              {pendingRequests.map((request) => (
+                <View key={request.id} style={styles.row}>
+                  <Text style={styles.rowLabel}>{request.type === 'depot' ? '⬆️ Dépôt' : '⬇️ Retrait'} — {formatMoney(request.montant)}</Text>
+                  <Text style={styles.rowMuted}>{formatDateTime(request.date_creation)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>Mes Cryptomonnaies</Text>
-            {cryptoWallets.map(wallet => (
-              <View key={wallet.id} style={styles.walletCard}>
-                <View style={styles.walletHeader}>
-                  <Text style={styles.cryptoName}>{wallet.cryptoName}</Text>
-                  <Text style={styles.walletValue}>{wallet.valeur.toFixed(4)}</Text>
+            {holdings.length === 0 && <Text style={styles.rowMuted}>Référentiel indisponible</Text>}
+            {holdings.map(({ crypto, valeur }) => (
+              <View key={crypto.id} style={styles.row}>
+                <View>
+                  <Text style={styles.rowLabel}>{crypto.name}</Text>
+                  <Text style={styles.rowMuted}>{formatMoney(crypto.price)} / {crypto.symbol}</Text>
+                </View>
+                <View style={styles.rowRight}>
+                  <Text style={styles.walletValue}>{valeur.toFixed(4)} {crypto.symbol}</Text>
+                  <Text style={styles.rowMuted}>≈ {formatMoney(valeur * crypto.price)}</Text>
                 </View>
               </View>
             ))}
@@ -379,254 +159,130 @@ const Portefeuille = () => {
         </ScrollView>
       )}
 
-      {renderTransactionModal(true)}
-      {renderTransactionModal(false)}
-      {renderHistoriqueModal()}
+      <Modal visible={movementType !== null} transparent animationType="slide" onRequestClose={() => setMovementType(null)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{movementType === 'depot' ? 'Demande de dépôt' : 'Demande de retrait'}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Montant"
+              keyboardType="decimal-pad"
+              value={montant}
+              onChangeText={setMontant}
+              editable={!submitting}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => { setMontant(''); setMovementType(null); }}
+                disabled={submitting}
+              >
+                <Text style={styles.buttonText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={submitMovement} disabled={submitting}>
+                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Confirmer</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showHistory} transparent animationType="slide" onRequestClose={() => setShowHistory(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContent, styles.historyContent]}>
+            <Text style={styles.modalTitle}>Historique des mouvements</Text>
+            {history === null ? (
+              <ActivityIndicator size="large" color="#2c3e50" style={styles.historyLoading} />
+            ) : history.length === 0 && requests.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="document-text-outline" size={50} color="#95a5a6" />
+                <Text style={styles.emptyStateText}>Aucun mouvement</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.historyList}>
+                {requests.filter((r) => r.status !== 'validee').map((request) => (
+                  <View key={request.id} style={styles.historyItem}>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.historyAmount}>{request.type === 'depot' ? '+ ' : '- '}{formatMoney(request.montant)}</Text>
+                      <Text style={[styles.historyType, request.status === 'refusee' ? styles.refusedText : styles.pendingText]}>
+                        {request.type === 'depot' ? 'Dépôt' : 'Retrait'} · {STATUS_LABEL[request.status]}
+                        {request.motif ? ` (${request.motif})` : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.historyDate}>{formatDateTime(request.date_validation ?? request.date_creation)}</Text>
+                  </View>
+                ))}
+                {history.map((entry) => (
+                  <View key={entry.id} style={styles.historyItem}>
+                    <View style={styles.transactionInfo}>
+                      <Text style={[styles.historyAmount, entry.is_depot ? styles.depotText : styles.retraitText]}>
+                        {entry.is_depot ? '+ ' : '- '}{formatMoney(entry.valeur)}
+                      </Text>
+                      <Text style={[styles.historyType, entry.is_depot ? styles.depotText : styles.retraitText]}>
+                        {entry.is_depot ? '⬆️ Dépôt' : '⬇️ Retrait'} · Validé
+                      </Text>
+                    </View>
+                    <Text style={styles.historyDate}>{formatDateTime(entry.dateheure)}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+            <TouchableOpacity style={styles.closeButton} onPress={() => setShowHistory(false)}>
+              <Ionicons name="close-circle-outline" size={24} color="#fff" />
+              <Text style={styles.closeButtonText}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f6fa',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    color: 'red',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  balanceContainer: {
-    backgroundColor: '#fff',
-    padding: 20,
-    margin: 15,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  balanceLabel: {
-    fontSize: 16,
-    color: '#666',
-  },
-  balanceAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginTop: 5,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: 15,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderRadius: 8,
-    marginHorizontal: 5,
-  },
-  depositButton: {
-    backgroundColor: '#2ecc71',
-  },
-  withdrawButton: {
-    backgroundColor: '#e74c3c',
-  },
-  historyButton: {
-    backgroundColor: '#3498db',
-  },
-  actionButtonText: {
-    color: '#fff',
-    marginLeft: 5,
-    fontWeight: '500',
-  },
-  cryptoContainer: {
-    backgroundColor: '#fff',
-    margin: 15,
-    padding: 15,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#2c3e50',
-  },
-  walletCard: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    marginBottom: 10,
-  },
-  walletHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cryptoName: {
-    fontSize: 16,
-    color: '#2c3e50',
-  },
-  walletValue: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#2ecc71',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
-    width: '80%',
-  },
-  historiqueContent: {
-    maxHeight: '80%',
-    width: '90%',
-    backgroundColor: '#fff',
-    borderRadius: 15,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 15,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalButton: {
-    padding: 12,
-    borderRadius: 5,
-    flex: 1,
-    marginHorizontal: 5,
-    alignItems: 'center',
-  },
-  confirmButton: {
-    backgroundColor: '#2ecc71',
-  },
-  cancelButton: {
-    backgroundColor: '#95a5a6',
-  },
-  historiqueList: {
-    marginVertical: 15,
-  },
-  historiqueItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 15,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-    marginBottom: 10,
-    elevation: 2,
-  },
-  transactionInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  historiqueMontant: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  historiqueType: {
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  historiqueDate: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'right',
-  },
-  depotText: {
-    color: '#27ae60',
-  },
-  retraitText: {
-    color: '#e74c3c',
-  },
-  depotTypeText: {
-    color: '#2ecc71',
-  },
-  retraitTypeText: {
-    color: '#e74c3c',
-  },
-  fermerButton: {
-    backgroundColor: '#95a5a6',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingVertical: 15,
-    borderRadius: 10,
-    marginTop: 15,
-    elevation: 2,
-  },
-  fermerButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 30,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#95a5a6',
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
+  container: { flex: 1, backgroundColor: '#f5f6fa' },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  errorText: { color: '#e74c3c', fontSize: 16, textAlign: 'center' },
+  scrollView: { flex: 1 },
+  card: { backgroundColor: '#fff', padding: 20, margin: 15, marginBottom: 0, borderRadius: 10, elevation: 3 },
+  balanceLabel: { fontSize: 16, color: '#666' },
+  balanceAmount: { fontSize: 32, fontWeight: 'bold', color: '#2c3e50', marginTop: 5 },
+  actionsContainer: { flexDirection: 'row', justifyContent: 'space-around', padding: 15 },
+  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, borderRadius: 8, marginHorizontal: 5 },
+  depositButton: { backgroundColor: '#2ecc71' },
+  withdrawButton: { backgroundColor: '#e74c3c' },
+  historyButton: { backgroundColor: '#3498db' },
+  actionButtonText: { color: '#fff', marginLeft: 5, fontWeight: '500' },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#2c3e50' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  rowRight: { alignItems: 'flex-end' },
+  rowLabel: { fontSize: 16, color: '#2c3e50' },
+  rowMuted: { fontSize: 12, color: '#7f8c8d' },
+  walletValue: { fontSize: 16, fontWeight: '500', color: '#2ecc71' },
+  modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
+  modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 10, width: '85%' },
+  historyContent: { maxHeight: '80%', width: '90%' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 5, padding: 10, marginBottom: 15 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'space-between' },
+  modalButton: { padding: 12, borderRadius: 5, flex: 1, marginHorizontal: 5, alignItems: 'center' },
+  confirmButton: { backgroundColor: '#2ecc71' },
+  cancelButton: { backgroundColor: '#95a5a6' },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  historyLoading: { marginVertical: 30 },
+  historyList: { marginVertical: 15 },
+  historyItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: '#f8f9fa', borderRadius: 10, marginBottom: 10 },
+  transactionInfo: { flex: 1, marginRight: 10 },
+  historyAmount: { fontSize: 18, fontWeight: 'bold', marginBottom: 5, color: '#2c3e50' },
+  historyType: { fontSize: 14 },
+  historyDate: { fontSize: 12, color: '#666', textAlign: 'right' },
+  depotText: { color: '#27ae60' },
+  retraitText: { color: '#e74c3c' },
+  pendingText: { color: '#f39c12' },
+  refusedText: { color: '#e74c3c' },
+  closeButton: { backgroundColor: '#95a5a6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15, borderRadius: 10, marginTop: 15 },
+  closeButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginLeft: 8 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', padding: 30 },
+  emptyStateText: { fontSize: 16, color: '#95a5a6', marginTop: 10, textAlign: 'center' },
 });
 
 export default Portefeuille;
