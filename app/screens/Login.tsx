@@ -72,19 +72,6 @@ const Login = () => {
           <Text style={styles.title}>MobileCrypto</Text>
         </View>
 
-        <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>Information de connexion :</Text>
-          <View style={styles.infoSection}>
-            <Text style={styles.infoSubtitle}>Admin :</Text>
-            <Text style={styles.infoText}>Email : herakotonarivo@gmail.com</Text>
-            <Text style={styles.infoText}>Mot de passe : 123456</Text>
-          </View>
-          <View style={styles.infoSection}>
-            <Text style={styles.infoSubtitle}>Utilisateur :</Text>
-            <Text style={styles.infoText}>Email : ravelonarivoantonio@gmail.com</Text>
-            <Text style={styles.infoText}>Mot de passe : 123456</Text>
-          </View>
-        </View>
 
         <View style={styles.formContainer}>
           <TextInput
@@ -153,34 +140,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#2c3e50',
-  },
-  infoBox: {
-    backgroundColor: '#f8f9fa',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
-    width: '90%',
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  infoSection: {
-    marginVertical: 8,
-  },
-  infoSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#34495e',
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginLeft: 10,
   },
   formContainer: {
     width: '90%',
