@@ -6,7 +6,7 @@ import VerticalMenu from './VerticalMenu';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
-  const { width, height } = Dimensions.get('window');
+  const { width } = Dimensions.get('window');
   const isLargeScreen = width > 768;
   const insets = useSafeAreaInsets();
 

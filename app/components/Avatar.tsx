@@ -2,12 +2,12 @@ import React from 'react';
 import { View, TouchableOpacity, Image, Text, StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-
-const AVATAR_SIZE = 256;
 import { FIREBASE_STORAGE } from '../../FirebaseConfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../context/AuthContext';
 import { updateUserPresentation } from '../services/firestore';
+
+const AVATAR_SIZE = 256;
 
 const Avatar = () => {
   const { user } = useAuth();

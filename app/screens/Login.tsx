@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, TextInput, Button, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image, Text, TouchableOpacity } from 'react-native';
+import { View, TextInput, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FIREBASE_AUTH } from '../../FirebaseConfig';
 import { sendEmailVerification, signInWithEmailAndPassword, signOut } from 'firebase/auth';
